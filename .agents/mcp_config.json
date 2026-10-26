@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sqlite-inspector": {
+      "command": "uvx",
+      "args": ["mcp-server-sqlite", "--db-path", "./data/router.db"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
+}

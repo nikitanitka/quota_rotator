@@ -1,0 +1,24 @@
+services:
+  gemini-router:
+    container_name: gemini-router
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ai-infra-net
+
+networks:
+  ai-infra-net:
+    name: ai-infra-net
+    driver: bridge
+    attachable: true
+

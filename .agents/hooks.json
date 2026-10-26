@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "PreToolUse": [
+    {
+      "matcher": "run_command",
+      "command": "python3 -c \"import sys, json, os; cmd = os.environ.get('TOOL_INPUT', ''); sys.exit(1 if any(x in cmd for x in ['rm -rf /', 'mkfs', 'dd if=']) else 0)\""
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "write_to_file|replace_file_content|multi_replace_file_content",
+      "command": "python3 .agents/skills/contract-and-type-guard/scripts/verify_code.py"
+    }
+  ],
+  "Stop": [
+    {
+      "command": "python3 .agents/skills/contract-and-type-guard/scripts/verify_code.py"
+    }
+  ]
+}

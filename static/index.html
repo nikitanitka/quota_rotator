@@ -1,0 +1,2473 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Key Pool Router & Quota Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace']
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+              950: '#1e1b4b'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Sleek custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #020617;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+    .hero-glow {
+      background: radial-gradient(circle at 50% -10%, rgba(99, 102, 241, 0.18), transparent 60%);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white flex flex-col relative overflow-x-hidden">
+
+  <!-- Background Ambient Glow -->
+  <div class="fixed inset-0 pointer-events-none z-0 hero-glow"></div>
+
+  <!-- Header Section -->
+  <header class="sticky top-0 z-40 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+      
+      <!-- Logo & System Identity -->
+      <div class="flex items-center gap-3.5">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 p-0.5 shadow-lg shadow-indigo-500/20 flex items-center justify-center flex-shrink-0">
+          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+            <svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-base sm:text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+              Gemini Key Pool Router & Quota Control
+            </h1>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+              v2.0
+            </span>
+            <span id="connectionPill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span id="connectionText">POLL ACTIVE</span>
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 font-medium">Multi-key failover, sliding-window RPM/TPM guard & daily RPD scheduler</p>
+        </div>
+      </div>
+
+      <!-- Live Countdown & Manual Refresh -->
+      <div class="flex items-center gap-2.5 sm:gap-3 flex-shrink-0">
+        <!-- Live Countdown Badge -->
+        <div class="bg-slate-900/90 border border-slate-700/70 rounded-xl px-3 sm:px-4 py-2 shadow-inner flex items-center gap-2.5" title="Daily RPD reset scheduled strictly at 10:00:00 Europe/Moscow">
+          <div class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping opacity-80 flex-shrink-0"></div>
+          <div class="flex items-center gap-1.5">
+            <span id="resetCountdown" class="font-mono text-amber-400 font-bold text-xs sm:text-sm md:text-base tracking-wide whitespace-nowrap">
+              00:00:00 до сброса в 10:00 МСК
+            </span>
+          </div>
+        </div>
+
+        <!-- Manual Refresh Button -->
+        <button id="refreshBtn" onclick="refreshDashboard(true)" class="bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 border border-slate-700/80 px-3 py-2 rounded-xl transition duration-150 flex items-center gap-2 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40" title="Synchronize Pool Status">
+          <svg id="refreshIcon" class="w-4 h-4 text-slate-400 transition-transform duration-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span class="hidden md:inline">Refresh</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Dashboard Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8 z-10">
+
+    <!-- Hero Stats Grid -->
+    <section aria-label="Hero Stats Summary">
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        
+        <!-- Total Keys -->
+        <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm hover:border-slate-700/80 transition backdrop-blur-sm">
+          <div class="flex items-center justify-between text-slate-400 mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider">Total Keys</span>
+            <div class="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h10M7 12h10M7 17h10"/>
+              </svg>
+            </div>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <span id="heroTotalKeys" class="text-2xl sm:text-3xl font-extrabold text-white font-mono">0</span>
+            <span class="text-xs text-slate-500">keys</span>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-1">Configured in pool</p>
+        </div>
+
+        <!-- Ready Keys -->
+        <div class="bg-slate-900/80 border border-emerald-900/40 rounded-2xl p-4 shadow-sm hover:border-emerald-800/60 transition backdrop-blur-sm">
+          <div class="flex items-center justify-between text-emerald-400 mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider">Ready Keys</span>
+            <div class="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+            </div>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <span id="heroReadyKeys" class="text-2xl sm:text-3xl font-extrabold text-emerald-400 font-mono">0</span>
+            <span class="text-xs text-emerald-500/80">active</span>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-1">Available for routing</p>
+        </div>
+
+        <!-- Cooldown Keys -->
+        <div class="bg-slate-900/80 border border-amber-900/40 rounded-2xl p-4 shadow-sm hover:border-amber-800/60 transition backdrop-blur-sm">
+          <div class="flex items-center justify-between text-amber-400 mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider">Cooldown Keys</span>
+            <div class="p-1.5 rounded-lg bg-amber-500/15 text-amber-400">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+            </div>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <span id="heroCooldownKeys" class="text-2xl sm:text-3xl font-extrabold text-amber-400 font-mono">0</span>
+            <span class="text-xs text-amber-500/80">backing off</span>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-1">Temporary 429 cooldown</p>
+        </div>
+
+        <!-- Exhausted Keys -->
+        <div class="bg-slate-900/80 border border-rose-900/40 rounded-2xl p-4 shadow-sm hover:border-rose-800/60 transition backdrop-blur-sm">
+          <div class="flex items-center justify-between text-rose-400 mb-2">
+            <span class="text-xs font-semibold uppercase tracking-wider">Exhausted Keys</span>
+            <div class="p-1.5 rounded-lg bg-rose-500/15 text-rose-400">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>
+              </svg>
+            </div>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <span id="heroExhaustedKeys" class="text-2xl sm:text-3xl font-extrabold text-rose-400 font-mono">0</span>
+            <span class="text-xs text-rose-500/80">RPD exhausted</span>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-1">Resets at 10:00 MSK</p>
+        </div>
+
+        <!-- Total Pool RPD Capacity Gauge -->
+        <div class="col-span-2 lg:col-span-1 bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 shadow-sm hover:border-slate-700/80 transition backdrop-blur-sm flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between text-slate-400 mb-2">
+              <span class="text-xs font-semibold uppercase tracking-wider">RPD Capacity</span>
+              <span id="rpdPercentBadge" class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300">0%</span>
+            </div>
+            <div class="flex items-baseline gap-1">
+              <span id="heroRpdUsed" class="text-2xl font-extrabold text-white font-mono">0</span>
+              <span class="text-slate-500 font-mono">/</span>
+              <span id="heroRpdCapacity" class="text-lg font-bold text-slate-400 font-mono">0</span>
+              <span class="text-xs text-slate-500 ml-1">RPD</span>
+            </div>
+          </div>
+          <div class="mt-3">
+            <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+              <div id="rpdProgressBar" class="bg-gradient-to-r from-emerald-500 via-indigo-500 to-rose-500 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between items-center text-[10px] text-slate-500 mt-1.5 font-mono">
+              <span>Used today</span>
+              <span id="rpdRemainingText">0 remaining</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Model Quota Profile Selector Toolbar -->
+    <section class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        
+        <!-- Left: Model dropdown -->
+        <div class="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto">
+          <label for="modelSelect" class="text-xs sm:text-sm font-semibold text-slate-300 flex items-center gap-2 whitespace-nowrap">
+            <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/>
+            </svg>
+            Active Model Quota Profile:
+          </label>
+          <div class="relative flex-1 sm:w-80">
+            <select id="modelSelect" onchange="onModelChange(this.value)" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none cursor-pointer pr-10">
+              <!-- Populated via JavaScript -->
+            </select>
+            <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Current Model Spec Badges -->
+        <div id="modelSpecBadges" class="flex flex-wrap items-center gap-2 text-xs">
+          <span id="badgeCategory" class="px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 font-medium">Text-out models</span>
+          <span id="badgeRpm" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 font-mono font-medium border border-slate-700">RPM: 5</span>
+          <span id="badgeTpm" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 font-mono font-medium border border-slate-700">TPM: 250,000</span>
+          <span id="badgeRpd" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 font-mono font-medium border border-slate-700">RPD: 20</span>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Key Pool Management Section -->
+    <section class="space-y-4" aria-label="Key Management Pool">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2 border-b border-slate-800/80">
+        <div>
+          <h2 class="text-lg font-bold text-white flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+            </svg>
+            Key Management Pool
+          </h2>
+          <p class="text-xs text-slate-400">Live API keys with individual sliding-window rate tracking and individual controls</p>
+        </div>
+
+        <!-- Filters, Search & Add Key Button -->
+        <div class="flex flex-wrap items-center gap-3">
+          
+          <!-- Search box -->
+          <div class="relative w-40 sm:w-48">
+            <input type="text" id="keySearchInput" oninput="onKeySearchInput(this.value)" placeholder="Search label or key..." class="w-full bg-slate-900 border border-slate-800 text-white rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+            <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+
+          <!-- Filter status pills -->
+          <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
+            <button onclick="setKeyFilter('ALL')" id="filterBtnALL" class="px-2.5 sm:px-3 py-1 rounded-lg font-medium transition bg-indigo-600 text-white">All</button>
+            <button onclick="setKeyFilter('READY')" id="filterBtnREADY" class="px-2.5 sm:px-3 py-1 rounded-lg font-medium text-slate-400 hover:text-white transition">Ready</button>
+            <button onclick="setKeyFilter('COOLDOWN')" id="filterBtnCOOLDOWN" class="px-2.5 sm:px-3 py-1 rounded-lg font-medium text-slate-400 hover:text-white transition">Cooldown</button>
+            <button onclick="setKeyFilter('EXHAUSTED_RPD')" id="filterBtnEXHAUSTED" class="px-2.5 sm:px-3 py-1 rounded-lg font-medium text-slate-400 hover:text-white transition">Exhausted</button>
+            <button onclick="setKeyFilter('DISABLED')" id="filterBtnDISABLED" class="px-2.5 sm:px-3 py-1 rounded-lg font-medium text-slate-400 hover:text-white transition">Disabled</button>
+          </div>
+
+          <!-- Add Key Trigger -->
+          <button onclick="openAddKeyModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-lg shadow-indigo-600/20 active:scale-95 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add New Key
+          </button>
+        </div>
+      </div>
+
+      <!-- Key Cards Grid -->
+      <div id="keysGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Rendered dynamically via JavaScript -->
+        <div class="col-span-full py-16 text-center text-slate-500 flex flex-col items-center justify-center">
+          <div class="w-10 h-10 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-3"></div>
+          <span class="text-sm font-medium">Connecting to Gemini Key Pool...</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Client API Keys (Ingress Access Control) Section -->
+    <section class="space-y-4" aria-label="Client API Keys (Ingress Access Control)">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2 border-b border-slate-800/80">
+        <div>
+          <div class="flex items-center gap-2">
+            <div class="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              Client API Keys (Ingress Access Control)
+            </h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">API keys for external microservices to authenticate against this router with per-key RPM &amp; RPD rate limits</p>
+        </div>
+
+        <!-- Metric Badges & Action Toolbar -->
+        <div class="flex flex-wrap items-center gap-3">
+          <!-- Summary badges -->
+          <div class="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-1.5 gap-3 text-xs">
+            <div class="flex items-center gap-1.5" title="Total client API keys registered">
+              <span class="text-slate-400 text-[11px]">Total:</span>
+              <span id="totalClientKeysCount" class="font-mono font-bold text-white">0</span>
+            </div>
+            <span class="text-slate-700">•</span>
+            <div class="flex items-center gap-1.5" title="Active client keys available for requests">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span class="text-slate-400 text-[11px]">Active:</span>
+              <span id="activeClientKeysCount" class="font-mono font-bold text-emerald-400">0</span>
+            </div>
+            <span class="text-slate-700">•</span>
+            <div class="flex items-center gap-1.5" title="Total ingress requests handled across all client keys">
+              <span class="text-slate-400 text-[11px]">Handled Requests:</span>
+              <span id="handledClientRequestsCount" class="font-mono font-bold text-indigo-300">0</span>
+            </div>
+          </div>
+
+          <!-- Create Client Key Button -->
+          <button onclick="openCreateClientKeyModal()" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition shadow-lg shadow-emerald-600/20 active:scale-95 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            + Create Client Key
+          </button>
+        </div>
+      </div>
+
+      <!-- Client Keys Cards Grid -->
+      <div id="clientKeysGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Rendered dynamically via JavaScript -->
+        <div class="col-span-full py-10 text-center text-slate-500 flex flex-col items-center justify-center">
+          <div class="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-2.5"></div>
+          <span class="text-xs font-medium">Loading client access keys...</span>
+        </div>
+      </div>
+
+      <!-- Quick Integration Code Snippets Accordion -->
+      <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden transition-all duration-200">
+        <button type="button" onclick="toggleSnippetsAccordion()" class="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-slate-800/40 transition focus:outline-none">
+          <div class="flex items-center gap-2.5">
+            <div class="p-1 rounded-lg bg-indigo-500/10 text-indigo-400">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+              </svg>
+            </div>
+            <span class="text-xs sm:text-sm font-semibold text-slate-200">Quick Integration Code Snippets</span>
+            <span class="text-[11px] text-slate-500 hidden sm:inline">— Authenticate external microservices using your Client API Key</span>
+          </div>
+          <div class="flex items-center gap-2 text-slate-400 text-xs">
+            <span id="snippetsToggleText" class="text-[11px]">Show examples</span>
+            <svg id="snippetsToggleIcon" class="w-4 h-4 transition-transform duration-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+        </button>
+
+        <div id="snippetsContent" class="hidden px-5 pb-5 pt-1 border-t border-slate-800/60 space-y-4">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs font-mono">
+            
+            <!-- cURL Example -->
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-slate-400 text-[11px] font-sans font-medium">
+                  <span class="flex items-center gap-1.5 text-slate-300">
+                    <span class="w-2 h-2 rounded-full bg-cyan-400"></span> cURL (x-goog-api-key)
+                  </span>
+                  <button onclick="copyToClipboard('curl -H &quot;x-goog-api-key: YOUR_KEY&quot; http://gemini-router:8000/v1beta/models/gemini-3.1-flash-lite:generateContent', this)" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[10px]">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy
+                  </button>
+                </div>
+                <pre class="text-slate-300 whitespace-pre-wrap break-all text-[11px] leading-relaxed">curl -H "x-goog-api-key: YOUR_KEY" \
+  http://gemini-router:8000/v1beta/models/gemini-3.1-flash-lite:generateContent</pre>
+              </div>
+            </div>
+
+            <!-- Python SDK Example -->
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-slate-400 text-[11px] font-sans font-medium">
+                  <span class="flex items-center gap-1.5 text-slate-300">
+                    <span class="w-2 h-2 rounded-full bg-indigo-400"></span> Python SDK
+                  </span>
+                  <button onclick="copyToClipboard('from google import genai\n\nclient = genai.Client(\n    api_key=&quot;YOUR_KEY&quot;,\n    http_options={&quot;base_url&quot;: &quot;http://gemini-router:8000&quot;}\n)', this)" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[10px]">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy
+                  </button>
+                </div>
+                <pre class="text-slate-300 whitespace-pre-wrap break-all text-[11px] leading-relaxed">client = genai.Client(
+    api_key="YOUR_KEY",
+    http_options={"base_url": "http://gemini-router:8000"}
+)</pre>
+              </div>
+            </div>
+
+            <!-- Bearer Auth Example -->
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-slate-400 text-[11px] font-sans font-medium">
+                  <span class="flex items-center gap-1.5 text-slate-300">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Bearer Auth Header
+                  </span>
+                  <button onclick="copyToClipboard('-H &quot;Authorization: Bearer YOUR_KEY&quot;', this)" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[10px]">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy
+                  </button>
+                </div>
+                <pre class="text-slate-300 whitespace-pre-wrap break-all text-[11px] leading-relaxed">-H "Authorization: Bearer YOUR_KEY"</pre>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive Routing & Playground Section -->
+    <section class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-sm">
+      <div class="border-b border-slate-800 pb-4 mb-6">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div class="flex items-center gap-2.5">
+            <div class="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-white">Interactive Pool Router Playground</h2>
+              <p class="text-xs text-slate-400">Execute test prompts across the key pool to inspect latency, key routing, and quota consumption</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-400">Execution Mode:</span>
+            <label class="relative inline-flex items-center cursor-pointer" title="Dry-run simulates request execution without consuming real upstream API tokens">
+              <input type="checkbox" id="playgroundDryRun" class="sr-only peer" checked onchange="onDryRunToggle()">
+              <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              <span id="dryRunLabel" class="ml-2 text-xs font-semibold text-emerald-400">Dry-Run Simulation</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Playground Layout: Split Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- Request Configuration (Left) -->
+        <div class="space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            
+            <!-- Model Choice -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1.5" for="playgroundModel">Target Model</label>
+              <select id="playgroundModel" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+                <!-- Populated via JS -->
+              </select>
+            </div>
+
+            <!-- Action Choice -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1.5" for="playgroundAction">API Action</label>
+              <select id="playgroundAction" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+                <option value="generateContent">generateContent</option>
+                <option value="streamGenerateContent">streamGenerateContent</option>
+                <option value="countTokens">countTokens</option>
+              </select>
+            </div>
+
+            <!-- Queue Wait Timeout -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="block text-xs font-semibold text-slate-300" for="playgroundWaitTimeout" title="Queue wait timeout. 0 = immediate 429, -1 = wait up to 24h, >0 = wait seconds">
+                  Queue Wait (sec)
+                </label>
+                <span class="text-[10px] text-slate-500 font-mono" title="0 = immediate, -1 = 24h wait">0=imm, -1=24h</span>
+              </div>
+              <input type="number" id="playgroundWaitTimeout" value="0" min="-1" step="1" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50" placeholder="0 = immediate, -1 = 24h" title="Queue wait timeout. 0 = immediate 429, -1 = wait up to 24h, >0 = wait seconds" />
+            </div>
+
+          </div>
+
+          <!-- Prompt Area -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-semibold text-slate-300" for="playgroundPrompt">Prompt / Query</label>
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="setSamplePrompt('Explain quantum computing in one simple sentence for high school students.')" class="text-[11px] text-slate-400 hover:text-indigo-400 transition bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50">Quantum</button>
+                <button type="button" onclick="setSamplePrompt('Write a clean Python function to calculate Fibonacci numbers with memoization.')" class="text-[11px] text-slate-400 hover:text-indigo-400 transition bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50">Python</button>
+                <button type="button" onclick="setSamplePrompt('Hello! How are you today?')" class="text-[11px] text-slate-400 hover:text-indigo-400 transition bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/50">Greeting</button>
+              </div>
+            </div>
+            <textarea id="playgroundPrompt" rows="4" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl p-3 text-xs md:text-sm font-sans focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-y" placeholder="Enter prompt to route through Gemini pool...">Explain quantum computing in one simple sentence for high school students.</textarea>
+          </div>
+
+          <!-- Submit Button -->
+          <div class="flex items-center justify-between pt-1">
+            <span class="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              Auto-selects healthy key with lowest load
+            </span>
+            <button id="sendRequestBtn" onclick="sendPlaygroundRequest()" class="bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition shadow-lg shadow-indigo-600/25 active:scale-95 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <span id="sendBtnSpinner" class="hidden">
+                <svg class="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+              </span>
+              <svg id="sendBtnIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+              <span>Send Test Request</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Telemetry & Response Panel (Right) -->
+        <div class="flex flex-col bg-slate-950 border border-slate-800 rounded-xl p-4 min-h-[300px]">
+          
+          <!-- Telemetry Badges Bar -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-800/80 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="telemetryKeyBadge" class="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 font-mono text-indigo-300 flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                Routed to: <strong id="telemetryKeyText" class="text-white">Idle</strong>
+              </span>
+              <span id="telemetryLatencyBadge" class="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 font-mono text-slate-400">
+                Latency: <span id="telemetryLatencyText">-- ms</span>
+              </span>
+              <span id="telemetryTokensBadge" class="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 font-mono text-slate-400">
+                In: <span id="telemetryInTokens">0</span> / Out: <span id="telemetryOutTokens">0</span> tokens
+              </span>
+            </div>
+            <div>
+              <span id="telemetryStatusBadge" class="px-2.5 py-1 rounded-md bg-slate-800/80 text-slate-400 font-mono font-medium border border-slate-700/60">
+                READY
+              </span>
+            </div>
+          </div>
+
+          <!-- Output Box -->
+          <div class="flex-1 flex flex-col relative">
+            <div class="flex items-center justify-between text-slate-500 text-[11px] pb-1.5 font-mono">
+              <span>OUTPUT PREVIEW</span>
+              <button onclick="copyPlaygroundOutput()" id="copyOutputBtn" class="text-slate-400 hover:text-white transition flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <pre id="playgroundOutput" class="flex-1 bg-slate-900/90 border border-slate-800/80 rounded-lg p-3.5 font-mono text-xs text-slate-200 overflow-x-auto overflow-y-auto max-h-64 whitespace-pre-wrap leading-relaxed select-text">// Click "Send Test Request" to dispatch a prompt.
+// The pool router balances across healthy keys, tracks sliding 60-second RPM/TPM usage, and reports latency telemetry.</pre>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Add Key Modal -->
+  <div id="addKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl transform transition-transform scale-95" id="addKeyModalCard">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">Add Gemini API Key</h3>
+            <p class="text-xs text-slate-400">Register a Google Gemini API key to the active rotation pool</p>
+          </div>
+        </div>
+        <button onclick="closeAddKeyModal()" class="text-slate-400 hover:text-white transition p-1 rounded-lg hover:bg-slate-800" aria-label="Close modal">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Modal Form -->
+      <form id="addKeyForm" onsubmit="submitAddKeyForm(event)" class="space-y-4 pt-4">
+        
+        <!-- Label Field -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5" for="keyLabelInput">Key Label</label>
+          <input type="text" id="keyLabelInput" required placeholder="e.g. Key-Gamma-3" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+          <div class="flex items-center gap-1.5 mt-1.5">
+            <span class="text-[11px] text-slate-500">Suggestions:</span>
+            <button type="button" onclick="document.getElementById('keyLabelInput').value = 'Key-Gamma-3'" class="text-[11px] text-indigo-400 hover:underline">Key-Gamma-3</button>
+            <span class="text-slate-600">•</span>
+            <button type="button" onclick="document.getElementById('keyLabelInput').value = 'Key-Delta-4'" class="text-[11px] text-indigo-400 hover:underline">Key-Delta-4</button>
+          </div>
+        </div>
+
+        <!-- Raw API Key Field -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-semibold text-slate-300" for="keyValueInput">API Key Value</label>
+            <span class="text-[11px] text-slate-500">Supports AQ.* and AIza...</span>
+          </div>
+          <div class="relative">
+            <input type="password" id="keyValueInput" required placeholder="AQ.Ab8RN6... or AIzaSy..." oninput="validateKeyInput(this.value)" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2.5 text-sm font-mono pr-10 focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+            <button type="button" onclick="togglePasswordVisibility('keyValueInput', 'eyeIcon')" class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-white transition" aria-label="Toggle password visibility">
+              <svg id="eyeIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+          <div id="keyValidationHint" class="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
+            Min 8 characters required. Stored securely.
+          </div>
+        </div>
+
+        <!-- Error box in modal -->
+        <div id="modalErrorBox" class="hidden p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+        </div>
+
+        <!-- Modal Actions -->
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button type="button" onclick="closeAddKeyModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">
+            Cancel
+          </button>
+          <button type="submit" id="submitAddKeyBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-indigo-600/30 active:scale-95 flex items-center gap-2">
+            <span id="addKeySpinner" class="hidden">
+              <svg class="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+            <span>Add Key</span>
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl">
+      <div class="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto mb-4 border border-rose-500/20">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+      </div>
+      <h3 class="text-base font-bold text-white text-center">Delete API Key?</h3>
+      <p class="text-xs text-slate-400 text-center mt-2">
+        Are you sure you want to remove <strong id="deleteKeyLabel" class="text-white"></strong> from the pool? This action cannot be undone.
+      </p>
+      <div class="flex items-center justify-center gap-3 mt-6">
+        <button type="button" onclick="closeDeleteModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">
+          Cancel
+        </button>
+        <button type="button" id="confirmDeleteBtn" onclick="confirmDeleteKeyAction()" class="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-rose-600/30">
+          Delete Key
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Client Key Modal -->
+  <div id="createClientKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl transform transition-transform scale-95" id="createClientKeyModalCard">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">Create Client API Key</h3>
+            <p class="text-xs text-slate-400">Provision ingress access token with per-client rate limits</p>
+          </div>
+        </div>
+        <button onclick="closeCreateClientKeyModal()" class="text-slate-400 hover:text-white transition p-1 rounded-lg hover:bg-slate-800" aria-label="Close modal">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <form id="createClientKeyForm" onsubmit="submitCreateClientKeyForm(event)" class="space-y-4 pt-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5" for="createClientKeyName">Client Name / Microservice</label>
+          <input type="text" id="createClientKeyName" required placeholder="e.g. ChatBot Microservice" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-semibold text-slate-300" for="createClientKeyRpm">RPM Limit</label>
+              <span class="text-[10px] text-slate-500 font-mono">0 = unlimited</span>
+            </div>
+            <input type="number" id="createClientKeyRpm" value="60" min="0" step="1" required class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-semibold text-slate-300" for="createClientKeyRpd">RPD Limit</label>
+              <span class="text-[10px] text-slate-500 font-mono">0 = unlimited</span>
+            </div>
+            <input type="number" id="createClientKeyRpd" value="1000" min="0" step="1" required class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-semibold text-slate-300" for="createClientKeyCustom">Custom Key (Optional)</label>
+            <span class="text-[10px] text-slate-500 font-mono">Min 8 chars</span>
+          </div>
+          <input type="text" id="createClientKeyCustom" placeholder="Leave blank to autogenerate gkr-live-..." class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+          <p class="text-[11px] text-slate-500 mt-1">If blank, generates a cryptographic key with <code class="font-mono text-emerald-400">gkr-live-</code> prefix.</p>
+        </div>
+
+        <div id="createClientKeyError" class="hidden p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs"></div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button type="button" onclick="closeCreateClientKeyModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">Cancel</button>
+          <button type="submit" id="submitCreateClientKeyBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-emerald-600/30 active:scale-95 flex items-center gap-2">
+            <span id="createClientKeySpinner" class="hidden">
+              <svg class="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+            <span>Generate Key</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Key Created Success Modal -->
+  <div id="clientKeyCreatedModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl transform transition-transform scale-95" id="clientKeyCreatedModalCard">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center border border-emerald-500/30 flex-shrink-0">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-white">Client API Key Created</h3>
+          <p class="text-xs text-slate-400">Key for <span id="createdKeyClientName" class="font-semibold text-emerald-300"></span> is ready to use</p>
+        </div>
+      </div>
+
+      <!-- Raw Key Display Box -->
+      <div class="space-y-2">
+        <label class="block text-xs font-semibold text-slate-300">Secret API Key (raw_key)</label>
+        <div class="relative flex items-center">
+          <div id="createdRawKeyDisplay" class="w-full font-mono text-xs sm:text-sm font-semibold text-emerald-400 bg-slate-950 px-3.5 py-3 rounded-xl border border-emerald-500/30 break-all select-all pr-28">
+            gkr-live-...
+          </div>
+          <button onclick="copyCreatedKey()" id="copyCreatedKeyBtn" class="absolute right-2 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs font-medium transition flex items-center gap-1.5 shadow-sm active:scale-95">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span>Copy Key</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Security Warning Box -->
+      <div class="mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
+        <svg class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <div class="leading-relaxed">
+          <strong class="font-semibold text-amber-200">Make sure to copy your API key now.</strong>
+          <span class="text-amber-300/90 block mt-0.5">For security reasons, you will not be able to view the full key again. It is stored as an irreversible cryptographic hash in the router database.</span>
+        </div>
+      </div>
+
+      <div class="mt-6 flex justify-end">
+        <button type="button" onclick="closeClientKeyCreatedModal()" class="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded-xl text-sm font-semibold transition">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Client Key Modal -->
+  <div id="editClientKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl transform transition-transform scale-95" id="editClientKeyModalCard">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">Edit Client API Key</h3>
+            <p class="text-xs text-slate-400">Update client name, rate limits, or access status</p>
+          </div>
+        </div>
+        <button onclick="closeEditClientKeyModal()" class="text-slate-400 hover:text-white transition p-1 rounded-lg hover:bg-slate-800" aria-label="Close modal">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <form id="editClientKeyForm" onsubmit="submitEditClientKeyForm(event)" class="space-y-4 pt-4">
+        <input type="hidden" id="editClientKeyId" />
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5" for="editClientKeyName">Client Name</label>
+          <input type="text" id="editClientKeyName" required class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-semibold text-slate-300" for="editClientKeyRpm">RPM Limit</label>
+              <span class="text-[10px] text-slate-500 font-mono">0 = unlimited</span>
+            </div>
+            <input type="number" id="editClientKeyRpm" min="0" step="1" required class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-semibold text-slate-300" for="editClientKeyRpd">RPD Limit</label>
+              <span class="text-[10px] text-slate-500 font-mono">0 = unlimited</span>
+            </div>
+            <input type="number" id="editClientKeyRpd" min="0" step="1" required class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5" for="editClientKeyStatus">Key Status</label>
+          <select id="editClientKeyStatus" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2.5 text-sm font-sans focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+            <option value="ACTIVE">ACTIVE — Requests allowed within limits</option>
+            <option value="PAUSED">PAUSED — Temporarily block incoming requests</option>
+            <option value="REVOKED">REVOKED — Permanently deactivated</option>
+          </select>
+        </div>
+
+        <div id="editClientKeyError" class="hidden p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs"></div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button type="button" onclick="closeEditClientKeyModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">Cancel</button>
+          <button type="submit" id="submitEditClientKeyBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-indigo-600/30 active:scale-95 flex items-center gap-2">
+            <span id="editClientKeySpinner" class="hidden">
+              <svg class="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+            <span>Save Changes</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Client Key Confirmation Modal -->
+  <div id="deleteClientKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl">
+      <div class="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto mb-4 border border-rose-500/20">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+      </div>
+      <h3 class="text-base font-bold text-white text-center">Delete Client Key?</h3>
+      <p class="text-xs text-slate-400 text-center mt-2 leading-relaxed">
+        Are you sure you want to delete <strong id="deleteClientKeyName" class="text-white"></strong>? External services using this key will immediately be rejected.
+      </p>
+      <div class="flex items-center justify-center gap-3 mt-6">
+        <button type="button" onclick="closeDeleteClientKeyModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">
+          Cancel
+        </button>
+        <button type="button" id="confirmDeleteClientKeyBtn" onclick="confirmDeleteClientKeyAction()" class="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-rose-600/30">
+          Delete Key
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <!-- Populated dynamically -->
+  </div>
+
+  <!-- Footer -->
+  <footer class="mt-auto border-t border-slate-800/80 bg-slate-950/60 py-6 text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+        <span>Gemini Quota Control Dashboard & Router</span>
+        <span class="text-slate-600">•</span>
+        <span>Europe/Moscow Reset Calendar</span>
+      </div>
+      <div>
+        <span>Daily RPD Reset: <strong class="text-slate-400 font-mono">10:00:00 MSK (UTC+3)</strong></span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Application Logic -->
+  <script>
+    // --- Model Quota Catalog (Exact mirror of src/contracts.py) ---
+    const MODEL_CATALOG = {
+      "antigravity": { model_id: "antigravity", category: "Agents", rpm: 60, tpm: 100000, rpd: 100 },
+      "gemini-2.5-flash": { model_id: "gemini-2.5-flash", category: "Text-out models", rpm: 5, tpm: 250000, rpd: 20 },
+      "gemini-2.5-flash-lite": { model_id: "gemini-2.5-flash-lite", category: "Text-out models", rpm: 10, tpm: 250000, rpd: 20 },
+      "gemini-3-flash": { model_id: "gemini-3-flash", category: "Text-out models", rpm: 5, tpm: 250000, rpd: 20 },
+      "gemini-3.1-flash-lite": { model_id: "gemini-3.1-flash-lite", category: "Text-out models", rpm: 15, tpm: 250000, rpd: 500 },
+      "gemini-3.5-flash-lite": { model_id: "gemini-3.5-flash-lite", category: "Text-out models", rpm: 15, tpm: 250000, rpd: 500 },
+      "gemini-3.6-flash": { model_id: "gemini-3.6-flash", category: "Text-out models", rpm: 5, tpm: 250000, rpd: 20 },
+      "gemini-3.7-flash": { model_id: "gemini-3.7-flash", category: "Text-out models", rpm: 5, tpm: 250000, rpd: 20 },
+      "gemini-3.8-flash": { model_id: "gemini-3.8-flash", category: "Text-out models", rpm: 5, tpm: 250000, rpd: 20 },
+      "gemini-2.5-flash-tts": { model_id: "gemini-2.5-flash-tts", category: "Multi-modal TTS", rpm: 3, tpm: 10000, rpd: 10 },
+      "gemini-3.1-flash-tts": { model_id: "gemini-3.1-flash-tts", category: "Multi-modal TTS", rpm: 3, tpm: 10000, rpd: 10 },
+      "gemini-3.8-flash-tts": { model_id: "gemini-3.8-flash-tts", category: "Multi-modal TTS", rpm: 3, tpm: 10000, rpd: 10 },
+      "gemini-3.8-flash-lite-tts": { model_id: "gemini-3.8-flash-lite-tts", category: "Multi-modal TTS", rpm: 3, tpm: 10000, rpd: 10 },
+      "gemini-3.5-transcribe": { model_id: "gemini-3.5-transcribe", category: "Live API", rpm: 3, tpm: 10000, rpd: 25 },
+      "gemini-robotics-er-2-preview": { model_id: "gemini-robotics-er-2-preview", category: "Other models", rpm: 5, tpm: 250000, rpd: 20 },
+      "gemma-4-26b": { model_id: "gemma-4-26b", category: "Other models", rpm: 30, tpm: 16000, rpd: 14400 },
+      "gemma-4-26b-a4b-it": { model_id: "gemma-4-26b-a4b-it", category: "Other models", rpm: 30, tpm: 16000, rpd: 14400 },
+      "gemma-4-31b": { model_id: "gemma-4-31b", category: "Other models", rpm: 30, tpm: 16000, rpd: 14400 },
+      "gemma-4-31b-it": { model_id: "gemma-4-31b-it", category: "Other models", rpm: 30, tpm: 16000, rpd: 14400 },
+      "gemini-embedding-1": { model_id: "gemini-embedding-1", category: "Other models", rpm: 100, tpm: 30000, rpd: 1000 },
+      "gemini-embedding-2": { model_id: "gemini-embedding-2", category: "Other models", rpm: 100, tpm: 30000, rpd: 1000 },
+      "gemini-2.5-pro": { model_id: "gemini-2.5-pro", category: "Zero Quota", rpm: 0, tpm: 0, rpd: 0 },
+      "gemini-3.1-pro": { model_id: "gemini-3.1-pro", category: "Zero Quota", rpm: 0, tpm: 0, rpd: 0 },
+      "gemini-4-argon": { model_id: "gemini-4-argon", category: "Zero Quota", rpm: 0, tpm: 0, rpd: 0 },
+      "gemini-2-flash": { model_id: "gemini-2-flash", category: "Zero Quota", rpm: 0, tpm: 0, rpd: 0 }
+    };
+
+    // --- State Variables ---
+    let currentSelectedModel = "gemini-2.5-flash";
+    let activeKeyFilter = "ALL";
+    let keySearchQuery = "";
+    let keysList = [];
+    let clientKeysList = [];
+    let poolStatus = null;
+    let nextResetRemainingSec = null;
+    let pollIntervalId = null;
+    let countdownIntervalId = null;
+    let keyPendingDeleteId = null;
+    let clientKeyPendingDeleteId = null;
+    let currentCreatedRawKey = "";
+    let isFetching = false;
+
+    // --- Calculate fallback MSK 10:00 reset seconds ---
+    function calculateFallbackResetSeconds() {
+      // 10:00 MSK is 07:00 UTC (Europe/Moscow is UTC+3)
+      const now = new Date();
+      const targetUtc = new Date(Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        7, 0, 0, 0
+      ));
+      if (now.getTime() >= targetUtc.getTime()) {
+        targetUtc.setUTCDate(targetUtc.getUTCDate() + 1);
+      }
+      return Math.max(0, Math.floor((targetUtc.getTime() - now.getTime()) / 1000));
+    }
+
+    // --- Toast Notification System ---
+    function showToast(title, message, type = "info") {
+      const container = document.getElementById("toastContainer");
+      if (!container) return;
+
+      const toast = document.createElement("div");
+      toast.className = `pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl backdrop-blur-md transition-all duration-300 transform translate-y-2 opacity-0 text-xs sm:text-sm`;
+
+      let iconSvg = '';
+      if (type === "success") {
+        toast.classList.add("bg-slate-900/95", "border-emerald-500/40", "text-emerald-300");
+        iconSvg = `<svg class="w-5 h-5 text-emerald-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+      } else if (type === "error") {
+        toast.classList.add("bg-slate-900/95", "border-rose-500/40", "text-rose-300");
+        iconSvg = `<svg class="w-5 h-5 text-rose-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+      } else if (type === "warning") {
+        toast.classList.add("bg-slate-900/95", "border-amber-500/40", "text-amber-300");
+        iconSvg = `<svg class="w-5 h-5 text-amber-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+      } else {
+        toast.classList.add("bg-slate-900/95", "border-indigo-500/40", "text-indigo-300");
+        iconSvg = `<svg class="w-5 h-5 text-indigo-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+      }
+
+      toast.innerHTML = `
+        ${iconSvg}
+        <div class="flex-1 pr-1">
+          <div class="font-semibold text-white">${escapeHtml(title)}</div>
+          <div class="text-slate-300 mt-0.5 text-xs">${escapeHtml(message)}</div>
+        </div>
+        <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-white transition" aria-label="Close notification">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      `;
+
+      container.appendChild(toast);
+
+      // Animate in
+      requestAnimationFrame(() => {
+        toast.classList.remove("translate-y-2", "opacity-0");
+        toast.classList.add("translate-y-0", "opacity-100");
+      });
+
+      // Auto dismiss after 4.5s
+      setTimeout(() => {
+        if (toast.parentElement) {
+          toast.classList.add("opacity-0", "translate-x-2");
+          setTimeout(() => toast.remove(), 300);
+        }
+      }, 4500);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // --- Format Seconds to HH:MM:SS ---
+    function formatSecondsToHMS(totalSec) {
+      if (totalSec === null || totalSec === undefined || isNaN(totalSec) || totalSec < 0) {
+        totalSec = 0;
+      }
+      const s = Math.floor(totalSec);
+      const hours = Math.floor(s / 3600);
+      const minutes = Math.floor((s % 3600) / 60);
+      const seconds = s % 60;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    // --- Format Numbers with Commas ---
+    function formatNumber(num) {
+      if (num === null || num === undefined) return "0";
+      return Number(num).toLocaleString('en-US');
+    }
+
+    // --- Populate Model Select Dropdowns ---
+    function populateModelDropdowns() {
+      const modelSelect = document.getElementById("modelSelect");
+      const playgroundModel = document.getElementById("playgroundModel");
+      if (!modelSelect || !playgroundModel) return;
+
+      // Group models by category
+      const categories = {};
+      for (const [id, spec] of Object.entries(MODEL_CATALOG)) {
+        if (!categories[spec.category]) {
+          categories[spec.category] = [];
+        }
+        categories[spec.category].push(spec);
+      }
+
+      let optionsHtml = '';
+      for (const [category, models] of Object.entries(categories)) {
+        optionsHtml += `<optgroup label="${category}" class="bg-slate-900 text-slate-300 font-sans">`;
+        for (const m of models) {
+          const selected = m.model_id === currentSelectedModel ? "selected" : "";
+          optionsHtml += `<option value="${m.model_id}" ${selected} class="font-mono text-white">${m.model_id} (RPM: ${m.rpm}, RPD: ${m.rpd})</option>`;
+        }
+        optionsHtml += `</optgroup>`;
+      }
+
+      modelSelect.innerHTML = optionsHtml;
+      playgroundModel.innerHTML = optionsHtml;
+      updateModelSpecBadges(currentSelectedModel);
+    }
+
+    function updateModelSpecBadges(modelId) {
+      const spec = MODEL_CATALOG[modelId] || { category: "Custom", rpm: 0, tpm: 0, rpd: 0 };
+      document.getElementById("badgeCategory").innerText = spec.category;
+      document.getElementById("badgeRpm").innerText = `RPM: ${spec.rpm}`;
+      document.getElementById("badgeTpm").innerText = `TPM: ${formatNumber(spec.tpm)}`;
+      document.getElementById("badgeRpd").innerText = `RPD: ${formatNumber(spec.rpd)}`;
+    }
+
+    function onModelChange(newModelId) {
+      currentSelectedModel = newModelId;
+      updateModelSpecBadges(newModelId);
+
+      // Sync playground selector as well
+      const playgroundModel = document.getElementById("playgroundModel");
+      if (playgroundModel && playgroundModel.value !== newModelId) {
+        playgroundModel.value = newModelId;
+      }
+
+      // Re-render key cards with new model quota usage
+      renderKeyCards();
+      // Re-fetch status for this model
+      refreshDashboard(false);
+    }
+
+    // --- Background Countdown & Local Timer Ticker ---
+    function startCountdownTicker() {
+      if (countdownIntervalId) clearInterval(countdownIntervalId);
+
+      countdownIntervalId = setInterval(() => {
+        // 1. Tick global MSK reset countdown
+        if (nextResetRemainingSec !== null && nextResetRemainingSec > 0) {
+          nextResetRemainingSec -= 1;
+        } else {
+          nextResetRemainingSec = calculateFallbackResetSeconds();
+        }
+
+        const countdownElem = document.getElementById("resetCountdown");
+        if (countdownElem) {
+          countdownElem.innerText = `${formatSecondsToHMS(nextResetRemainingSec)} до сброса в 10:00 МСК`;
+        }
+
+        // 2. Tick local cooldown timers on key cards
+        let updatedAnyCooldown = false;
+        for (const k of keysList) {
+          if (k.cooldown_remaining_sec && k.cooldown_remaining_sec > 0) {
+            k.cooldown_remaining_sec = Math.max(0, k.cooldown_remaining_sec - 1);
+            if (k.cooldown_remaining_sec === 0 && k.status === "COOLDOWN") {
+              k.status = "READY";
+              updatedAnyCooldown = true;
+            }
+            // Update live text badge directly
+            const cdElem = document.getElementById(`cooldown-timer-${k.id}`);
+            if (cdElem) {
+              cdElem.innerText = `${Math.ceil(k.cooldown_remaining_sec)}s`;
+            }
+          }
+        }
+        if (updatedAnyCooldown) {
+          renderKeyCards();
+        }
+      }, 1000);
+    }
+
+    // --- API Fetch: Status & Keys ---
+    async function refreshDashboard(showNotification = false) {
+      if (isFetching) return;
+      isFetching = true;
+
+      const refreshIcon = document.getElementById("refreshIcon");
+      if (refreshIcon) refreshIcon.classList.add("rotate-180");
+
+      try {
+        // 1. Fetch Pool Status
+        const statusPromise = fetch(`/api/status?model_id=${encodeURIComponent(currentSelectedModel)}`)
+          .then(async (res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+          })
+          .catch(() => null);
+
+        // 2. Fetch Keys List
+        const keysPromise = fetch("/api/keys")
+          .then(async (res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+          })
+          .catch(() => null);
+
+        // 3. Fetch Client Keys List
+        const clientKeysPromise = fetch("/api/client-keys")
+          .then(async (res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+          })
+          .catch(() => null);
+
+        const [statusData, keysData, clientKeysData] = await Promise.all([
+          statusPromise,
+          keysPromise,
+          clientKeysPromise
+        ]);
+
+        // Connection Pill Indicator
+        const connPill = document.getElementById("connectionPill");
+        const connText = document.getElementById("connectionText");
+
+        if (statusData || keysData || clientKeysData) {
+          if (connPill && connText) {
+            connPill.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30";
+            connText.innerText = "POLL ACTIVE";
+          }
+        } else {
+          if (connPill && connText) {
+            connPill.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30";
+            connText.innerText = "CONNECTING";
+          }
+        }
+
+        // Apply Status Data
+        if (statusData) {
+          poolStatus = statusData;
+          applyStatusData(statusData);
+        }
+
+        // Apply Keys Data
+        if (keysData) {
+          keysList = Array.isArray(keysData) ? keysData : (keysData.keys || []);
+          renderKeyCards();
+          recalculateHeroStatsFromKeys();
+        }
+
+        // Apply Client Keys Data
+        if (clientKeysData) {
+          clientKeysList = Array.isArray(clientKeysData) ? clientKeysData : [];
+          renderClientKeyCards();
+          updateClientKeyCounters();
+        }
+
+        if (showNotification) {
+          showToast("Synchronized", "Pool status & quota telemetry updated", "success");
+        }
+
+      } catch (err) {
+        // Strict catch block - zero unhandled exceptions
+      } finally {
+        isFetching = false;
+        if (refreshIcon) {
+          setTimeout(() => refreshIcon.classList.remove("rotate-180"), 400);
+        }
+      }
+    }
+
+    function applyStatusData(data) {
+      if (!data) return;
+
+      // Update Countdown Seconds from Backend
+      if (typeof data.next_reset_seconds_remaining === "number") {
+        nextResetRemainingSec = data.next_reset_seconds_remaining;
+        const countdownElem = document.getElementById("resetCountdown");
+        if (countdownElem) {
+          countdownElem.innerText = `${formatSecondsToHMS(nextResetRemainingSec)} до сброса в 10:00 МСК`;
+        }
+      }
+
+      // Hero Metrics from Status
+      if (typeof data.total_keys === "number") document.getElementById("heroTotalKeys").innerText = data.total_keys;
+      if (typeof data.ready_keys === "number") document.getElementById("heroReadyKeys").innerText = data.ready_keys;
+      if (typeof data.cooldown_keys === "number") document.getElementById("heroCooldownKeys").innerText = data.cooldown_keys;
+      if (typeof data.exhausted_keys === "number") document.getElementById("heroExhaustedKeys").innerText = data.exhausted_keys;
+
+      // Pool RPD Capacity & Consumption
+      const used = data.total_rpd_used || 0;
+      const cap = data.total_rpd_capacity || 0;
+      document.getElementById("heroRpdUsed").innerText = formatNumber(used);
+      document.getElementById("heroRpdCapacity").innerText = formatNumber(cap);
+
+      const percent = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+      const bar = document.getElementById("rpdProgressBar");
+      const badge = document.getElementById("rpdPercentBadge");
+      const remText = document.getElementById("rpdRemainingText");
+
+      if (bar) bar.style.width = `${percent}%`;
+      if (badge) badge.innerText = `${percent}%`;
+      if (remText) remText.innerText = `${formatNumber(Math.max(0, cap - used))} remaining`;
+    }
+
+    function recalculateHeroStatsFromKeys() {
+      if (!keysList || keysList.length === 0) return;
+      let total = keysList.length;
+      let ready = 0;
+      let cooldown = 0;
+      let exhausted = 0;
+      let disabled = 0;
+      let totalRpdUsed = 0;
+
+      for (const k of keysList) {
+        if (k.is_disabled || k.status === "DISABLED") {
+          disabled++;
+        } else if (k.status === "COOLDOWN") {
+          cooldown++;
+        } else if (k.status === "EXHAUSTED_RPD") {
+          exhausted++;
+        } else if (k.status === "READY") {
+          ready++;
+        }
+
+        // Sum RPD usage for current selected model
+        const usage = k.models_usage && k.models_usage[currentSelectedModel];
+        if (usage && typeof usage.rpd_used === "number") {
+          totalRpdUsed += usage.rpd_used;
+        } else if (typeof k.rpd_used_total === "number") {
+          totalRpdUsed += k.rpd_used_total;
+        }
+      }
+
+      const spec = MODEL_CATALOG[currentSelectedModel] || { rpd: 20 };
+      const totalRpdCap = total * spec.rpd;
+
+      document.getElementById("heroTotalKeys").innerText = total;
+      document.getElementById("heroReadyKeys").innerText = ready;
+      document.getElementById("heroCooldownKeys").innerText = cooldown;
+      document.getElementById("heroExhaustedKeys").innerText = exhausted;
+
+      document.getElementById("heroRpdUsed").innerText = formatNumber(totalRpdUsed);
+      document.getElementById("heroRpdCapacity").innerText = formatNumber(totalRpdCap);
+
+      const percent = totalRpdCap > 0 ? Math.min(100, Math.round((totalRpdUsed / totalRpdCap) * 100)) : 0;
+      const bar = document.getElementById("rpdProgressBar");
+      const badge = document.getElementById("rpdPercentBadge");
+      const remText = document.getElementById("rpdRemainingText");
+
+      if (bar) bar.style.width = `${percent}%`;
+      if (badge) badge.innerText = `${percent}%`;
+      if (remText) remText.innerText = `${formatNumber(Math.max(0, totalRpdCap - totalRpdUsed))} remaining`;
+    }
+
+    // --- Search Input Listener ---
+    function onKeySearchInput(val) {
+      keySearchQuery = val.trim().toLowerCase();
+      renderKeyCards();
+    }
+
+    // --- Render Key Cards ---
+    function renderKeyCards() {
+      const container = document.getElementById("keysGrid");
+      if (!container) return;
+
+      const spec = MODEL_CATALOG[currentSelectedModel] || { rpm: 5, tpm: 250000, rpd: 20 };
+
+      // Filter by status
+      let filtered = keysList.slice();
+      if (activeKeyFilter !== "ALL") {
+        if (activeKeyFilter === "DISABLED") {
+          filtered = filtered.filter(k => k.is_disabled || k.status === "DISABLED");
+        } else {
+          filtered = filtered.filter(k => !k.is_disabled && k.status === activeKeyFilter);
+        }
+      }
+
+      // Filter by search query
+      if (keySearchQuery) {
+        filtered = filtered.filter(k => 
+          (k.label && k.label.toLowerCase().includes(keySearchQuery)) ||
+          (k.masked_key && k.masked_key.toLowerCase().includes(keySearchQuery))
+        );
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full py-12 text-center text-slate-500 bg-slate-900/40 rounded-2xl border border-slate-800">
+            <svg class="w-10 h-10 mx-auto text-slate-600 mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h10M7 12h10M7 17h10"/></svg>
+            <div class="text-sm font-semibold text-slate-400">No matching keys found</div>
+            <div class="text-xs text-slate-600 mt-1">Adjust search or filter parameters</div>
+          </div>
+        `;
+        return;
+      }
+
+      let html = "";
+      for (const key of filtered) {
+        const usage = (key.models_usage && key.models_usage[currentSelectedModel]) || {
+          rpm_used: 0,
+          rpm_limit: spec.rpm,
+          tpm_used: 0,
+          tpm_limit: spec.tpm,
+          rpd_used: 0,
+          rpd_limit: spec.rpd
+        };
+
+        const rpmLimit = usage.rpm_limit !== undefined ? usage.rpm_limit : spec.rpm;
+        const tpmLimit = usage.tpm_limit !== undefined ? usage.tpm_limit : spec.tpm;
+        const rpdLimit = usage.rpd_limit !== undefined ? usage.rpd_limit : spec.rpd;
+
+        const rpmUsed = usage.rpm_used || 0;
+        const tpmUsed = usage.tpm_used || 0;
+        const rpdUsed = usage.rpd_used || 0;
+
+        const rpmPct = rpmLimit > 0 ? Math.min(100, Math.round((rpmUsed / rpmLimit) * 100)) : 0;
+        const tpmPct = tpmLimit > 0 ? Math.min(100, Math.round((tpmUsed / tpmLimit) * 100)) : 0;
+        const rpdPct = rpdLimit > 0 ? Math.min(100, Math.round((rpdUsed / rpdLimit) * 100)) : 0;
+
+        // Status Badge Logic (Strict specification styling)
+        let statusBadgeHtml = '';
+        if (key.is_disabled || key.status === "DISABLED") {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-700/30 text-slate-400 border border-slate-600/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+              DISABLED
+            </span>`;
+        } else if (key.status === "READY") {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              READY
+            </span>`;
+        } else if (key.status === "COOLDOWN") {
+          const cdRemaining = Math.ceil(key.cooldown_remaining_sec || 0);
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+              COOLDOWN (<span id="cooldown-timer-${key.id}">${cdRemaining}s</span>)
+            </span>`;
+        } else if (key.status === "RATE_LIMITED_RPM") {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-orange-500/20 text-orange-400 border border-orange-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-orange-400"></span>
+              RATE_LIMITED_RPM
+            </span>`;
+        } else if (key.status === "EXHAUSTED_RPD") {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-purple-500/20 text-purple-400 border border-purple-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+              EXHAUSTED_RPD
+            </span>`;
+        } else {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+              ${escapeHtml(key.status)}
+            </span>`;
+        }
+
+        // Consecutive 429 badge if any
+        const errors429Html = key.consecutive_429 > 0 
+          ? `<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">429 x${key.consecutive_429}</span>`
+          : '';
+
+        // Key Card HTML
+        html += `
+          <div class="bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-5 shadow-sm transition flex flex-col justify-between" id="key-card-${key.id}">
+            
+            <!-- Card Header -->
+            <div>
+              <div class="flex items-start justify-between gap-2 mb-2.5">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h3 class="font-bold text-white text-base">${escapeHtml(key.label)}</h3>
+                    ${errors429Html}
+                  </div>
+                  <div class="flex items-center gap-2 mt-1">
+                    <span class="font-mono text-xs text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">${escapeHtml(key.masked_key)}</span>
+                    <button onclick="copyToClipboard('${escapeHtml(key.masked_key)}', this)" class="text-slate-400 hover:text-white transition p-1" title="Copy Key">
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  ${statusBadgeHtml}
+                </div>
+              </div>
+
+              <!-- Quotas Progress Section -->
+              <div class="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
+                
+                <!-- RPM -->
+                <div>
+                  <div class="flex justify-between items-center text-xs font-mono mb-1">
+                    <span class="text-slate-400 font-sans text-[11px] font-medium">RPM (60s Sliding Window)</span>
+                    <span class="text-slate-200 font-semibold">${rpmUsed} / ${rpmLimit} <span class="text-slate-500 text-[10px]">(${rpmPct}%)</span></span>
+                  </div>
+                  <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-300" style="width: ${rpmPct}%"></div>
+                  </div>
+                </div>
+
+                <!-- TPM -->
+                <div>
+                  <div class="flex justify-between items-center text-xs font-mono mb-1">
+                    <span class="text-slate-400 font-sans text-[11px] font-medium">TPM (Tokens/min)</span>
+                    <span class="text-slate-200 font-semibold">${formatNumber(tpmUsed)} / ${formatNumber(tpmLimit)} <span class="text-slate-500 text-[10px]">(${tpmPct}%)</span></span>
+                  </div>
+                  <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-cyan-500 h-1.5 rounded-full transition-all duration-300" style="width: ${tpmPct}%"></div>
+                  </div>
+                </div>
+
+                <!-- RPD -->
+                <div>
+                  <div class="flex justify-between items-center text-xs font-mono mb-1">
+                    <span class="text-slate-400 font-sans text-[11px] font-medium">RPD (Daily Reset 10:00 MSK)</span>
+                    <span class="text-slate-200 font-semibold">${rpdUsed} / ${rpdLimit} <span class="text-slate-500 text-[10px]">(${rpdPct}%)</span></span>
+                  </div>
+                  <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-gradient-to-r from-emerald-500 to-indigo-500 h-1.5 rounded-full transition-all duration-300" style="width: ${rpdPct}%"></div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Card Actions -->
+            <div class="mt-5 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <!-- Toggle Disable / Enable Button -->
+                <button onclick="toggleKeyDisabled(${key.id}, ${key.is_disabled})" class="px-2.5 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${key.is_disabled ? 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700/60'}" title="${key.is_disabled ? 'Enable Key' : 'Pause Key'}">
+                  ${key.is_disabled ? `
+                    <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Enable</span>
+                  ` : `
+                    <svg class="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    <span>Pause</span>
+                  `}
+                </button>
+
+                <!-- Reset Cooldown Button -->
+                <button onclick="resetKeyCooldown(${key.id})" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700/60 transition flex items-center gap-1.5" title="Reset Cooldown">
+                  <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                  <span>Reset CD</span>
+                </button>
+              </div>
+
+              <!-- Delete Button -->
+              <button onclick="openDeleteKeyModal(${key.id}, '${escapeHtml(key.label)}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition" title="Delete Key">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              </button>
+            </div>
+
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    // --- Key Filter Switching ---
+    function setKeyFilter(filter) {
+      activeKeyFilter = filter;
+      const filters = ['ALL', 'READY', 'COOLDOWN', 'EXHAUSTED_RPD', 'DISABLED'];
+      for (const f of filters) {
+        const btn = document.getElementById(`filterBtn${f === 'EXHAUSTED_RPD' ? 'EXHAUSTED' : f}`);
+        if (btn) {
+          if (f === filter) {
+            btn.className = "px-2.5 sm:px-3 py-1 rounded-lg font-medium transition bg-indigo-600 text-white";
+          } else {
+            btn.className = "px-2.5 sm:px-3 py-1 rounded-lg font-medium text-slate-400 hover:text-white transition";
+          }
+        }
+      }
+      renderKeyCards();
+    }
+
+    // --- Toggle Disabled API Call ---
+    async function toggleKeyDisabled(keyId, currentDisabled) {
+      try {
+        const res = await fetch(`/api/keys/${keyId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_disabled: !currentDisabled })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `HTTP ${res.status}`);
+        }
+        showToast("Key Updated", `Key ${!currentDisabled ? 'paused' : 'enabled'} successfully`, "success");
+        await refreshDashboard(false);
+      } catch (err) {
+        showToast("Error", err.message || "Failed to update key status", "error");
+      }
+    }
+
+    // --- Reset Cooldown API Call ---
+    async function resetKeyCooldown(keyId) {
+      try {
+        const res = await fetch(`/api/keys/${keyId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reset_cooldown: true })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `HTTP ${res.status}`);
+        }
+        showToast("Cooldown Reset", "Key cooldown cleared successfully", "success");
+        await refreshDashboard(false);
+      } catch (err) {
+        showToast("Error", err.message || "Failed to reset cooldown", "error");
+      }
+    }
+
+    // --- Delete Key Modal & Action ---
+    function openDeleteKeyModal(keyId, keyLabel) {
+      keyPendingDeleteId = keyId;
+      document.getElementById("deleteKeyLabel").innerText = keyLabel;
+      const modal = document.getElementById("deleteConfirmModal");
+      modal.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        modal.classList.remove("opacity-0");
+        modal.classList.add("opacity-100");
+      });
+    }
+
+    function closeDeleteModal() {
+      keyPendingDeleteId = null;
+      const modal = document.getElementById("deleteConfirmModal");
+      modal.classList.remove("opacity-100");
+      modal.classList.add("opacity-0");
+      setTimeout(() => modal.classList.add("hidden"), 200);
+    }
+
+    async function confirmDeleteKeyAction() {
+      if (!keyPendingDeleteId) return;
+      const keyId = keyPendingDeleteId;
+      closeDeleteModal();
+
+      try {
+        const res = await fetch(`/api/keys/${keyId}`, {
+          method: "DELETE"
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `HTTP ${res.status}`);
+        }
+        showToast("Key Deleted", "API key removed from pool", "success");
+        await refreshDashboard(false);
+      } catch (err) {
+        showToast("Delete Failed", err.message || "Failed to delete key", "error");
+      }
+    }
+
+    // --- Add Key Modal ---
+    function openAddKeyModal() {
+      document.getElementById("addKeyForm").reset();
+      document.getElementById("modalErrorBox").classList.add("hidden");
+      document.getElementById("keyValidationHint").className = "text-[11px] text-slate-500 mt-1.5 flex items-center gap-1";
+      document.getElementById("keyValidationHint").innerText = "Min 8 characters required. Stored securely.";
+
+      const modal = document.getElementById("addKeyModal");
+      modal.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        modal.classList.remove("opacity-0");
+        modal.classList.add("opacity-100");
+      });
+      setTimeout(() => document.getElementById("keyLabelInput").focus(), 100);
+    }
+
+    function closeAddKeyModal() {
+      const modal = document.getElementById("addKeyModal");
+      modal.classList.remove("opacity-100");
+      modal.classList.add("opacity-0");
+      setTimeout(() => modal.classList.add("hidden"), 200);
+    }
+
+    function togglePasswordVisibility(inputId, iconId) {
+      const input = document.getElementById(inputId);
+      const icon = document.getElementById(iconId);
+      if (input.type === "password") {
+        input.type = "text";
+        icon.innerHTML = `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`;
+      } else {
+        input.type = "password";
+        icon.innerHTML = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
+      }
+    }
+
+    function validateKeyInput(val) {
+      const hint = document.getElementById("keyValidationHint");
+      const trimmed = val.trim();
+      if (!trimmed) {
+        hint.className = "text-[11px] text-slate-500 mt-1.5";
+        hint.innerText = "Min 8 characters required. Stored securely.";
+        return;
+      }
+      if (trimmed.length < 8) {
+        hint.className = "text-[11px] text-rose-400 mt-1.5";
+        hint.innerText = `Too short: ${trimmed.length} / 8 chars minimum`;
+        return;
+      }
+
+      if (trimmed.startsWith("AQ.") || trimmed.startsWith("AIza")) {
+        hint.className = "text-[11px] text-emerald-400 mt-1.5 flex items-center gap-1";
+        hint.innerHTML = `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Valid format detected (${trimmed.substring(0, 4)}...)`;
+      } else {
+        hint.className = "text-[11px] text-amber-400 mt-1.5";
+        hint.innerText = "Non-standard prefix (Gemini keys usually start with AQ. or AIza)";
+      }
+    }
+
+    async function submitAddKeyForm(e) {
+      e.preventDefault();
+      const label = document.getElementById("keyLabelInput").value.trim();
+      const keyValue = document.getElementById("keyValueInput").value.trim();
+      const errBox = document.getElementById("modalErrorBox");
+      const spinner = document.getElementById("addKeySpinner");
+      const submitBtn = document.getElementById("submitAddKeyBtn");
+
+      if (!label) {
+        errBox.innerText = "Label is required";
+        errBox.classList.remove("hidden");
+        return;
+      }
+      if (keyValue.length < 8) {
+        errBox.innerText = "API key must be at least 8 characters";
+        errBox.classList.remove("hidden");
+        return;
+      }
+
+      errBox.classList.add("hidden");
+      spinner.classList.remove("hidden");
+      submitBtn.disabled = true;
+
+      try {
+        const res = await fetch("/api/keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label, key_value: keyValue })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `HTTP ${res.status}: Failed to add key`);
+        }
+
+        closeAddKeyModal();
+        showToast("Key Added", `Key "${label}" added to pool`, "success");
+        await refreshDashboard(false);
+      } catch (err) {
+        errBox.innerText = err.message || "Failed to add API key";
+        errBox.classList.remove("hidden");
+      } finally {
+        spinner.classList.add("hidden");
+        submitBtn.disabled = false;
+      }
+    }
+
+    // --- Playground Logic ---
+    function onDryRunToggle() {
+      const isDry = document.getElementById("playgroundDryRun").checked;
+      const label = document.getElementById("dryRunLabel");
+      if (isDry) {
+        label.innerText = "Dry-Run Simulation";
+        label.className = "ml-2 text-xs font-semibold text-emerald-400";
+      } else {
+        label.innerText = "Live Upstream";
+        label.className = "ml-2 text-xs font-semibold text-amber-400";
+      }
+    }
+
+    function setSamplePrompt(text) {
+      document.getElementById("playgroundPrompt").value = text;
+    }
+
+    async function sendPlaygroundRequest() {
+      const modelId = document.getElementById("playgroundModel").value;
+      const action = document.getElementById("playgroundAction").value;
+      const prompt = document.getElementById("playgroundPrompt").value;
+      const isDryRun = document.getElementById("playgroundDryRun").checked;
+
+      const waitTimeoutVal = parseFloat(document.getElementById("playgroundWaitTimeout")?.value || "0");
+      const waitTimeout = isNaN(waitTimeoutVal) ? 0 : waitTimeoutVal;
+
+      const sendBtn = document.getElementById("sendRequestBtn");
+      const spinner = document.getElementById("sendBtnSpinner");
+      const icon = document.getElementById("sendBtnIcon");
+      const outputElem = document.getElementById("playgroundOutput");
+
+      const keyText = document.getElementById("telemetryKeyText");
+      const latencyText = document.getElementById("telemetryLatencyText");
+      const inTokens = document.getElementById("telemetryInTokens");
+      const outTokens = document.getElementById("telemetryOutTokens");
+      const statusBadge = document.getElementById("telemetryStatusBadge");
+
+      spinner.classList.remove("hidden");
+      icon.classList.add("hidden");
+      sendBtn.disabled = true;
+
+      if (waitTimeout !== 0) {
+        statusBadge.className = "px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-300 font-mono font-medium border border-amber-500/40 animate-pulse";
+        statusBadge.innerText = "⏳ WAITING IN QUEUE...";
+      } else {
+        statusBadge.className = "px-2.5 py-1 rounded-md bg-indigo-500/15 text-indigo-400 font-mono font-medium border border-indigo-500/30";
+        statusBadge.innerText = "ROUTING...";
+      }
+
+      const startTime = performance.now();
+
+      try {
+        const payload = {
+          model_id: modelId,
+          prompt: prompt,
+          action: action,
+          dry_run: isDryRun,
+          wait_timeout: waitTimeout
+        };
+
+        const res = await fetch("/api/playground", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const elapsedMs = Math.round(performance.now() - startTime);
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          // Handle Router Error Response
+          if (res.status === 429 && data?.error_code === "QUEUE_TIMEOUT") {
+            statusBadge.className = "px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-400 font-mono font-medium border border-amber-500/30";
+            statusBadge.innerText = "⏳ 429 QUEUE TIMEOUT";
+            showToast("Queue Timeout", data?.message || "Request timed out waiting for an available key in queue", "warning");
+          } else if (res.status === 429) {
+            statusBadge.className = "px-2.5 py-1 rounded-md bg-rose-500/20 text-rose-400 font-mono font-medium border border-rose-500/30";
+            statusBadge.innerText = "429 RATE_LIMITED";
+            showToast("Rate Limited", data?.message || "All keys are currently rate-limited or exhausted", "error");
+          } else {
+            statusBadge.className = "px-2.5 py-1 rounded-md bg-rose-500/20 text-rose-400 font-mono font-medium border border-rose-500/30";
+            statusBadge.innerText = `HTTP ${res.status}`;
+            showToast("Routing Error", data?.message || `HTTP ${res.status}`, "error");
+          }
+
+          if (data?.selected_key_label) {
+            keyText.innerText = data.selected_key_label;
+          } else if (data?.details?.selected_key_label) {
+            keyText.innerText = data.details.selected_key_label;
+          } else {
+            keyText.innerText = data?.error_code === "QUEUE_TIMEOUT" ? "Queue Timeout" : "No Key Available";
+          }
+
+          latencyText.innerText = `${elapsedMs} ms`;
+          inTokens.innerText = "0";
+          outTokens.innerText = "0";
+
+          const errorFormatted = data ? JSON.stringify(data, null, 2) : `Request failed with HTTP ${res.status}`;
+          outputElem.innerText = errorFormatted;
+        } else {
+          // Success Response (supports generateContent, streamGenerateContent, countTokens)
+          statusBadge.className = "px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-400 font-mono font-medium border border-emerald-500/30";
+          statusBadge.innerText = data.dry_run ? "200 DRY_RUN_OK" : "200 OK";
+
+          keyText.innerText = data.selected_key_label || (data.selected_key_id ? `Key #${data.selected_key_id}` : "Pool Key");
+          latencyText.innerText = `${typeof data.latency_ms === 'number' ? data.latency_ms.toFixed(1) : elapsedMs} ms`;
+          inTokens.innerText = typeof data.tokens_in === 'number' ? data.tokens_in : 0;
+          outTokens.innerText = typeof data.tokens_out === 'number' ? data.tokens_out : 0;
+
+          outputElem.innerText = data.response_text || JSON.stringify(data, null, 2);
+
+          const actionTitle = action === "streamGenerateContent" 
+            ? "Stream Completed" 
+            : (action === "countTokens" ? "Tokens Counted" : "Request Routed");
+          showToast(actionTitle, `Handled by ${data.selected_key_label || 'Pool Key'} (${latencyText.innerText})`, "success");
+        }
+
+        // Refresh keys & pool quota counts
+        await refreshDashboard(false);
+
+      } catch (err) {
+        const elapsedMs = Math.round(performance.now() - startTime);
+        statusBadge.className = "px-2.5 py-1 rounded-md bg-rose-500/20 text-rose-400 font-mono font-medium border border-rose-500/30";
+        statusBadge.innerText = "NETWORK_ERROR";
+        keyText.innerText = "Offline";
+        latencyText.innerText = `${elapsedMs} ms`;
+        outputElem.innerText = `Network/Connection Error:\n${err.message || 'Could not reach server endpoint /api/playground'}`;
+        showToast("Network Error", "Could not reach server endpoint", "error");
+      } finally {
+        spinner.classList.add("hidden");
+        icon.classList.remove("hidden");
+        sendBtn.disabled = false;
+      }
+    }
+
+    // Alias for backward compatibility
+    const executePlaygroundRequest = sendPlaygroundRequest;
+
+    function copyPlaygroundOutput() {
+      const text = document.getElementById("playgroundOutput").innerText;
+      copyToClipboard(text);
+    }
+
+    // --- Clipboard Utility ---
+    function copyToClipboard(text) {
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast("Copied", "Copied to clipboard", "info");
+        }).catch(() => {
+          fallbackCopyText(text);
+        });
+      } else {
+        fallbackCopyText(text);
+      }
+    }
+
+    function fallbackCopyText(text) {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast("Copied", "Copied to clipboard", "info");
+      } catch (err) {
+        showToast("Copy Failed", "Please copy manually", "warning");
+      }
+      document.body.removeChild(textArea);
+    }
+
+    // ==========================================
+    // --- Client API Keys (Ingress) Logic ---
+    // ==========================================
+    async function fetchClientKeys() {
+      try {
+        const res = await fetch("/api/client-keys");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        clientKeysList = Array.isArray(data) ? data : [];
+        renderClientKeyCards();
+        updateClientKeyCounters();
+      } catch (err) {
+        // Strict catch block - zero unhandled exceptions
+      }
+    }
+
+    function updateClientKeyCounters() {
+      const total = clientKeysList.length;
+      const active = clientKeysList.filter(k => k.status === "ACTIVE").length;
+      const requests = clientKeysList.reduce((sum, k) => sum + (k.total_requests || 0), 0);
+
+      const totalElem = document.getElementById("totalClientKeysCount");
+      const activeElem = document.getElementById("activeClientKeysCount");
+      const reqElem = document.getElementById("handledClientRequestsCount");
+
+      if (totalElem) totalElem.innerText = formatNumber(total);
+      if (activeElem) activeElem.innerText = formatNumber(active);
+      if (reqElem) reqElem.innerText = formatNumber(requests);
+    }
+
+    function formatRelativeTime(isoStr) {
+      if (!isoStr) return "Never";
+      try {
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return "Never";
+        const now = new Date();
+        const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000);
+        if (diffSec < 5) return "Just now";
+        if (diffSec < 60) return `${diffSec}s ago`;
+        const diffMin = Math.floor(diffSec / 60);
+        if (diffMin < 60) return `${diffMin}m ago`;
+        const diffHours = Math.floor(diffMin / 60);
+        if (diffHours < 24) return `${diffHours}h ago`;
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        return "Never";
+      }
+    }
+
+    function renderClientKeyCards() {
+      const container = document.getElementById("clientKeysGrid");
+      if (!container) return;
+
+      if (!clientKeysList || clientKeysList.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full py-12 px-6 text-center bg-slate-900/40 rounded-2xl border border-slate-800 flex flex-col items-center justify-center">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-3 border border-indigo-500/20">
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <h4 class="text-sm font-semibold text-white">No client keys yet</h4>
+            <p class="text-xs text-slate-400 max-w-lg mt-1.5 leading-relaxed">
+              No client keys yet. The router is currently running in <span class="text-amber-400 font-medium">Open Access mode</span>. Create a key to require authentication on <code class="font-mono text-indigo-300 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">/v1beta/*</code>.
+            </p>
+            <button onclick="openCreateClientKeyModal()" class="mt-4 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-semibold transition shadow-md shadow-emerald-600/30 flex items-center gap-1.5 active:scale-95">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              + Create Client Key
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      let html = "";
+      for (const key of clientKeysList) {
+        // Status Badge Logic
+        let statusBadgeHtml = "";
+        if (key.status === "ACTIVE") {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              ACTIVE
+            </span>`;
+        } else if (key.status === "PAUSED") {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+              PAUSED
+            </span>`;
+        } else if (key.status === "REVOKED") {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+              <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+              REVOKED
+            </span>`;
+        } else {
+          statusBadgeHtml = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+              ${escapeHtml(key.status)}
+            </span>`;
+        }
+
+        // RPM Quota bar
+        const rpmUsed = key.rpm_current || 0;
+        const rpmLimit = key.rpm_limit;
+        let rpmText = "";
+        let rpmPct = 0;
+        let rpmBarColor = "bg-indigo-500";
+        if (rpmLimit > 0) {
+          rpmPct = Math.min(100, Math.round((rpmUsed / rpmLimit) * 100));
+          rpmText = `${rpmUsed} / ${rpmLimit} RPM <span class="text-slate-500 text-[10px]">(${rpmPct}%)</span>`;
+          if (rpmPct >= 90) rpmBarColor = "bg-rose-500";
+          else if (rpmPct >= 70) rpmBarColor = "bg-amber-500";
+        } else {
+          rpmPct = rpmUsed > 0 ? 100 : 0;
+          rpmText = `${rpmUsed} / ∞ RPM <span class="text-emerald-400/80 text-[10px] font-sans font-medium">(Unlimited)</span>`;
+          rpmBarColor = "bg-emerald-500/70";
+        }
+
+        // RPD Quota bar
+        const rpdUsed = key.rpd_current || 0;
+        const rpdLimit = key.rpd_limit;
+        let rpdText = "";
+        let rpdPct = 0;
+        let rpdBarColor = "bg-gradient-to-r from-emerald-500 to-indigo-500";
+        if (rpdLimit > 0) {
+          rpdPct = Math.min(100, Math.round((rpdUsed / rpdLimit) * 100));
+          rpdText = `${rpdUsed} / ${rpdLimit} RPD <span class="text-slate-500 text-[10px]">(${rpdPct}%)</span>`;
+          if (rpdPct >= 90) rpdBarColor = "bg-rose-500";
+          else if (rpdPct >= 70) rpdBarColor = "bg-amber-500";
+        } else {
+          rpdPct = rpdUsed > 0 ? 100 : 0;
+          rpdText = `${rpdUsed} / ∞ RPD <span class="text-emerald-400/80 text-[10px] font-sans font-medium">(Unlimited, Reset 10:00 MSK)</span>`;
+          rpdBarColor = "bg-emerald-500/70";
+        }
+
+        // Pause / Resume button
+        let pauseResumeBtn = "";
+        if (key.status === "ACTIVE") {
+          pauseResumeBtn = `
+            <button onclick="toggleClientKeyStatus(${key.id}, 'PAUSED')" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700/60 transition flex items-center gap-1.5" title="Pause Key">
+              <svg class="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              <span>Pause</span>
+            </button>`;
+        } else if (key.status === "PAUSED") {
+          pauseResumeBtn = `
+            <button onclick="toggleClientKeyStatus(${key.id}, 'ACTIVE')" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30 transition flex items-center gap-1.5" title="Resume Key">
+              <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Resume</span>
+            </button>`;
+        } else {
+          pauseResumeBtn = `
+            <button onclick="toggleClientKeyStatus(${key.id}, 'ACTIVE')" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700/60 transition flex items-center gap-1.5" title="Reactivate Key">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Reactivate</span>
+            </button>`;
+        }
+
+        html += `
+          <div class="bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-5 shadow-sm transition flex flex-col justify-between" id="client-key-card-${key.id}">
+            <div>
+              <div class="flex items-start justify-between gap-2 mb-2.5">
+                <div class="min-w-0 pr-1">
+                  <h3 class="font-bold text-white text-base truncate" title="${escapeHtml(key.name)}">${escapeHtml(key.name)}</h3>
+                  <div class="flex items-center gap-2 mt-1">
+                    <span class="font-mono text-xs text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">${escapeHtml(key.key_prefix)}</span>
+                    <button onclick="copyToClipboard('${escapeHtml(key.key_prefix)}', this)" class="text-slate-400 hover:text-white transition p-1" title="Copy Key Prefix">
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="flex-shrink-0">
+                  ${statusBadgeHtml}
+                </div>
+              </div>
+
+              <!-- Quotas Progress Section -->
+              <div class="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
+                <!-- RPM -->
+                <div>
+                  <div class="flex justify-between items-center text-xs font-mono mb-1">
+                    <span class="text-slate-400 font-sans text-[11px] font-medium">RPM Limit</span>
+                    <span class="text-slate-200 font-semibold">${rpmText}</span>
+                  </div>
+                  <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div class="${rpmBarColor} h-1.5 rounded-full transition-all duration-300" style="width: ${rpmPct}%"></div>
+                  </div>
+                </div>
+
+                <!-- RPD -->
+                <div>
+                  <div class="flex justify-between items-center text-xs font-mono mb-1">
+                    <span class="text-slate-400 font-sans text-[11px] font-medium">RPD (Reset 10:00 MSK)</span>
+                    <span class="text-slate-200 font-semibold">${rpdText}</span>
+                  </div>
+                  <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div class="${rpdBarColor} h-1.5 rounded-full transition-all duration-300" style="width: ${rpdPct}%"></div>
+                  </div>
+                </div>
+
+                <!-- Usage Summary & Last Used -->
+                <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 font-mono">
+                  <span>${formatNumber(key.total_requests)} reqs • ${formatNumber(key.total_tokens)} tokens</span>
+                  <span class="text-slate-500">Last used: <strong class="text-slate-300 font-sans">${formatRelativeTime(key.last_used_at)}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card Actions -->
+            <div class="mt-5 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                ${pauseResumeBtn}
+                <button onclick="openEditClientKeyModal(${key.id})" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700/60 transition flex items-center gap-1.5" title="Edit Limits & Status">
+                  <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  <span>Edit</span>
+                </button>
+              </div>
+
+              <button onclick="openDeleteClientKeyModal(${key.id}, '${escapeHtml(key.name).replace(/'/g, "\\'")}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition" title="Delete Client Key">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    // --- Create Client Key Modal Handlers ---
+    function openCreateClientKeyModal() {
+      document.getElementById("createClientKeyForm").reset();
+      document.getElementById("createClientKeyRpm").value = 60;
+      document.getElementById("createClientKeyRpd").value = 1000;
+      document.getElementById("createClientKeyError").classList.add("hidden");
+
+      const modal = document.getElementById("createClientKeyModal");
+      modal.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        modal.classList.remove("opacity-0");
+        modal.classList.add("opacity-100");
+      });
+      setTimeout(() => document.getElementById("createClientKeyName").focus(), 100);
+    }
+
+    function closeCreateClientKeyModal() {
+      const modal = document.getElementById("createClientKeyModal");
+      modal.classList.remove("opacity-100");
+      modal.classList.add("opacity-0");
+      setTimeout(() => modal.classList.add("hidden"), 200);
+    }
+
+    async function submitCreateClientKeyForm(e) {
+      e.preventDefault();
+      const name = document.getElementById("createClientKeyName").value.trim();
+      const rpmLimit = parseInt(document.getElementById("createClientKeyRpm").value, 10);
+      const rpdLimit = parseInt(document.getElementById("createClientKeyRpd").value, 10);
+      const customKey = document.getElementById("createClientKeyCustom").value.trim();
+
+      const errBox = document.getElementById("createClientKeyError");
+      const spinner = document.getElementById("createClientKeySpinner");
+      const submitBtn = document.getElementById("submitCreateClientKeyBtn");
+
+      if (!name) {
+        errBox.innerText = "Client name is required";
+        errBox.classList.remove("hidden");
+        return;
+      }
+      if (isNaN(rpmLimit) || rpmLimit < 0) {
+        errBox.innerText = "RPM Limit must be >= 0";
+        errBox.classList.remove("hidden");
+        return;
+      }
+      if (isNaN(rpdLimit) || rpdLimit < 0) {
+        errBox.innerText = "RPD Limit must be >= 0";
+        errBox.classList.remove("hidden");
+        return;
+      }
+      if (customKey && customKey.length < 8) {
+        errBox.innerText = "Custom API key must be at least 8 characters";
+        errBox.classList.remove("hidden");
+        return;
+      }
+
+      errBox.classList.add("hidden");
+      spinner.classList.remove("hidden");
+      submitBtn.disabled = true;
+
+      try {
+        const payload = {
+          name: name,
+          rpm_limit: rpmLimit,
+          rpd_limit: rpdLimit
+        };
+        if (customKey) {
+          payload.custom_key = customKey;
+        }
+
+        const res = await fetch("/api/client-keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `HTTP ${res.status}: Failed to create client key`);
+        }
+
+        const data = await res.json();
+        closeCreateClientKeyModal();
+
+        // Open created modal
+        openClientKeyCreatedModal(data.key_record.name, data.raw_key);
+        showToast("Client Key Created", `Key for "${data.key_record.name}" generated`, "success");
+        await fetchClientKeys();
+      } catch (err) {
+        errBox.innerText = err.message || "Failed to create client API key";
+        errBox.classList.remove("hidden");
+      } finally {
+        spinner.classList.add("hidden");
+        submitBtn.disabled = false;
+      }
+    }
+
+    // --- Key Created Success Modal Handlers ---
+    function openClientKeyCreatedModal(clientName, rawKey) {
+      currentCreatedRawKey = rawKey;
+      document.getElementById("createdKeyClientName").innerText = clientName;
+      document.getElementById("createdRawKeyDisplay").innerText = rawKey;
+
+      const modal = document.getElementById("clientKeyCreatedModal");
+      modal.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        modal.classList.remove("opacity-0");
+        modal.classList.add("opacity-100");
+      });
+    }
+
+    function closeClientKeyCreatedModal() {
+      currentCreatedRawKey = "";
+      const modal = document.getElementById("clientKeyCreatedModal");
+      modal.classList.remove("opacity-100");
+      modal.classList.add("opacity-0");
+      setTimeout(() => modal.classList.add("hidden"), 200);
+    }
+
+    function copyCreatedKey() {
+      if (!currentCreatedRawKey) return;
+      copyToClipboard(currentCreatedRawKey);
+      showToast("Key Copied", "Secret client key copied to clipboard", "success");
+    }
+
+    // --- Edit Client Key Modal Handlers ---
+    function openEditClientKeyModal(keyId) {
+      const key = clientKeysList.find(k => k.id === keyId);
+      if (!key) return;
+
+      document.getElementById("editClientKeyId").value = key.id;
+      document.getElementById("editClientKeyName").value = key.name;
+      document.getElementById("editClientKeyRpm").value = key.rpm_limit;
+      document.getElementById("editClientKeyRpd").value = key.rpd_limit;
+      document.getElementById("editClientKeyStatus").value = key.status;
+      document.getElementById("editClientKeyError").classList.add("hidden");
+
+      const modal = document.getElementById("editClientKeyModal");
+      modal.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        modal.classList.remove("opacity-0");
+        modal.classList.add("opacity-100");
+      });
+      setTimeout(() => document.getElementById("editClientKeyName").focus(), 100);
+    }
+
+    function closeEditClientKeyModal() {
+      const modal = document.getElementById("editClientKeyModal");
+      modal.classList.remove("opacity-100");
+      modal.classList.add("opacity-0");
+      setTimeout(() => modal.classList.add("hidden"), 200);
+    }
+
+    async function submitEditClientKeyForm(e) {
+      e.preventDefault();
+      const keyId = document.getElementById("editClientKeyId").value;
+      const name = document.getElementById("editClientKeyName").value.trim();
+      const rpmLimit = parseInt(document.getElementById("editClientKeyRpm").value, 10);
+      const rpdLimit = parseInt(document.getElementById("editClientKeyRpd").value, 10);
+      const status = document.getElementById("editClientKeyStatus").value;
+
+      const errBox = document.getElementById("editClientKeyError");
+      const spinner = document.getElementById("editClientKeySpinner");
+      const submitBtn = document.getElementById("submitEditClientKeyBtn");
+
+      if (!name) {
+        errBox.innerText = "Client name is required";
+        errBox.classList.remove("hidden");
+        return;
+      }
+      if (isNaN(rpmLimit) || rpmLimit < 0) {
+        errBox.innerText = "RPM Limit must be >= 0";
+        errBox.classList.remove("hidden");
+        return;
+      }
+      if (isNaN(rpdLimit) || rpdLimit < 0) {
+        errBox.innerText = "RPD Limit must be >= 0";
+        errBox.classList.remove("hidden");
+        return;
+      }
+
+      errBox.classList.add("hidden");
+      spinner.classList.remove("hidden");
+      submitBtn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/client-keys/${keyId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name,
+            rpm_limit: rpmLimit,
+            rpd_limit: rpdLimit,
+            status: status
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `HTTP ${res.status}: Failed to update client key`);
+        }
+
+        closeEditClientKeyModal();
+        showToast("Key Updated", `Client key "${name}" updated successfully`, "success");
+        await fetchClientKeys();
+      } catch (err) {
+        errBox.innerText = err.message || "Failed to update client key";
+        errBox.classList.remove("hidden");
+      } finally {
+        spinner.classList.add("hidden");
+        submitBtn.disabled = false;
+      }
+    }
+
+    // --- Delete Client Key Modal Handlers ---
+    function openDeleteClientKeyModal(keyId, keyName) {
+      clientKeyPendingDeleteId = keyId;
+      document.getElementById("deleteClientKeyName").innerText = keyName;
+
+      const modal = document.getElementById("deleteClientKeyModal");
+      modal.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        modal.classList.remove("opacity-0");
+        modal.classList.add("opacity-100");
+      });
+    }
+
+    function closeDeleteClientKeyModal() {
+      clientKeyPendingDeleteId = null;
+      const modal = document.getElementById("deleteClientKeyModal");
+      modal.classList.remove("opacity-100");
+      modal.classList.add("opacity-0");
+      setTimeout(() => modal.classList.add("hidden"), 200);
+    }
+
+    async function confirmDeleteClientKeyAction() {
+      if (!clientKeyPendingDeleteId) return;
+      const keyId = clientKeyPendingDeleteId;
+      closeDeleteClientKeyModal();
+
+      try {
+        const res = await fetch(`/api/client-keys/${keyId}`, {
+          method: "DELETE"
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `HTTP ${res.status}: Failed to delete client key`);
+        }
+
+        showToast("Key Deleted", "Client API key deleted", "success");
+        await fetchClientKeys();
+      } catch (err) {
+        showToast("Delete Failed", err.message || "Failed to delete client key", "error");
+      }
+    }
+
+    // --- Toggle Client Key Status (Pause / Resume) ---
+    async function toggleClientKeyStatus(keyId, newStatus) {
+      try {
+        const res = await fetch(`/api/client-keys/${keyId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `HTTP ${res.status}: Failed to update status`);
+        }
+
+        showToast("Status Updated", `Client key status changed to ${newStatus}`, "success");
+        await fetchClientKeys();
+      } catch (err) {
+        showToast("Error", err.message || "Failed to update client key status", "error");
+      }
+    }
+
+    // --- Toggle Quick Integration Code Snippets Accordion ---
+    function toggleSnippetsAccordion() {
+      const content = document.getElementById("snippetsContent");
+      const icon = document.getElementById("snippetsToggleIcon");
+      const text = document.getElementById("snippetsToggleText");
+      if (!content) return;
+
+      const isHidden = content.classList.contains("hidden");
+      if (isHidden) {
+        content.classList.remove("hidden");
+        if (icon) icon.classList.add("rotate-180");
+        if (text) text.innerText = "Hide examples";
+      } else {
+        content.classList.add("hidden");
+        if (icon) icon.classList.remove("rotate-180");
+        if (text) text.innerText = "Show examples";
+      }
+    }
+
+    // --- Close Modals on ESC Key ---
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeAddKeyModal();
+        closeDeleteModal();
+        closeCreateClientKeyModal();
+        closeClientKeyCreatedModal();
+        closeEditClientKeyModal();
+        closeDeleteClientKeyModal();
+      }
+    });
+
+    // --- App Initialization ---
+    window.addEventListener("DOMContentLoaded", () => {
+      // 1. Populate model dropdowns
+      populateModelDropdowns();
+
+      // 2. Initialize fallback countdown timer
+      nextResetRemainingSec = calculateFallbackResetSeconds();
+      const countdownElem = document.getElementById("resetCountdown");
+      if (countdownElem) {
+        countdownElem.innerText = `${formatSecondsToHMS(nextResetRemainingSec)} до сброса в 10:00 МСК`;
+      }
+
+      // 3. Start live countdown interval
+      startCountdownTicker();
+
+      // 4. Initial fetch
+      refreshDashboard(false);
+
+      // 5. Setup periodic background polling every 4.5 seconds
+      pollIntervalId = setInterval(() => {
+        refreshDashboard(false);
+      }, 4500);
+    });
+  </script>
+</body>
+</html>
