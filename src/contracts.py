@@ -448,3 +448,118 @@ class KeySelectionResult(BaseModel):
     label: str
     key_value: str
     model_id: str
+
+
+class RequestLogRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    timestamp: float
+    timestamp_iso: str
+    client_key_id: int | None = None
+    client_key_name: str | None = None
+    google_key_id: int | None = None
+    google_key_label: str | None = None
+    model_id: str
+    action: str
+    prompt_text: str
+    prompt_full: dict[str, object] | None = None
+    response_text: str = ""
+    response_full: dict[str, object] | None = None
+    tokens_in: int = 0
+    tokens_out: int = 0
+    latency_ms: float = 0.0
+    status_code: int = 200
+    error_message: str | None = None
+
+
+class RequestLogListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    logs: list[RequestLogRecord]
+    total_count: int
+    latest_timestamp: float = 0.0
+
+
+def extract_text_from_contents(contents: object) -> str:
+    """Safely extract concatenated user message text from Gemini API contents or payload dict.
+
+    Accepts a list of content dicts (e.g. `[{"parts": [{"text": "..."}, ...], "role": "..."}]`)
+    or a dict (e.g. `{"contents": ...}` or `{"parts": ...}`), and safely extracts combined text.
+    Returns empty string if parsing fails or no text parts are present.
+    """
+    if contents is None:
+        return ""
+    if isinstance(contents, str):
+        return contents.strip()
+
+    items: list[object] = []
+    if isinstance(contents, list):
+        items = contents
+    elif isinstance(contents, dict):
+        if "contents" in contents:
+            c = contents["contents"]
+            if isinstance(c, list):
+                items = c
+            elif isinstance(c, dict):
+                items = [c]
+            elif isinstance(c, str):
+                return c.strip()
+        elif "candidates" in contents:
+            cands = contents["candidates"]
+            if isinstance(cands, list):
+                for cand in cands:
+                    if isinstance(cand, dict) and "content" in cand:
+                        items.append(cand["content"])
+        elif "parts" in contents or "text" in contents or "role" in contents:
+            items = [contents]
+        else:
+            return ""
+    else:
+        return ""
+
+    if not items:
+        return ""
+
+    def _extract_parts(item_obj: object) -> list[str]:
+        texts: list[str] = []
+        if isinstance(item_obj, str) and item_obj.strip():
+            texts.append(item_obj.strip())
+        elif isinstance(item_obj, dict):
+            parts = item_obj.get("parts")
+            if isinstance(parts, list):
+                for p in parts:
+                    if isinstance(p, dict):
+                        t = p.get("text")
+                        if isinstance(t, str) and t.strip():
+                            texts.append(t.strip())
+                    elif isinstance(p, str) and p.strip():
+                        texts.append(p.strip())
+            elif isinstance(parts, str) and parts.strip():
+                texts.append(parts.strip())
+            elif "text" in item_obj:
+                t = item_obj.get("text")
+                if isinstance(t, str) and t.strip():
+                    texts.append(t.strip())
+        return texts
+
+    user_items: list[object] = []
+    other_items: list[object] = []
+    for item in items:
+        if isinstance(item, dict):
+            role = item.get("role")
+            if role is None or str(role).lower() in ("user", ""):
+                user_items.append(item)
+            else:
+                other_items.append(item)
+        else:
+            user_items.append(item)
+
+    target_items = user_items if user_items else other_items
+
+    all_texts: list[str] = []
+    for item in target_items:
+        all_texts.extend(_extract_parts(item))
+
+    return "\n".join(all_texts).strip()
+

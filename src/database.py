@@ -5,6 +5,7 @@ Provides thread-safe, asynchronous CRUD for API keys and usage events logging.
 
 import asyncio
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sqlite3
 import time
@@ -106,6 +107,38 @@ class DatabaseManager:
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_client_usage_time ON client_usage_events(client_key_id, timestamp);"
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS request_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp REAL NOT NULL,
+                timestamp_iso TEXT NOT NULL,
+                client_key_id INTEGER,
+                client_key_name TEXT,
+                google_key_id INTEGER,
+                google_key_label TEXT,
+                model_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                prompt_text TEXT NOT NULL,
+                prompt_full_json TEXT,
+                response_text TEXT NOT NULL DEFAULT '',
+                response_full_json TEXT,
+                tokens_in INTEGER NOT NULL DEFAULT 0,
+                tokens_out INTEGER NOT NULL DEFAULT 0,
+                latency_ms REAL NOT NULL DEFAULT 0.0,
+                status_code INTEGER NOT NULL DEFAULT 200,
+                error_message TEXT,
+                FOREIGN KEY(client_key_id) REFERENCES client_keys(id) ON DELETE SET NULL,
+                FOREIGN KEY(google_key_id) REFERENCES api_keys(id) ON DELETE SET NULL
+            );
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_request_logs_time ON request_logs(timestamp DESC);"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_request_logs_client ON request_logs(client_key_id, timestamp DESC);"
         )
         self._conn.commit()
         self._sync_seed_if_needed()
@@ -539,6 +572,175 @@ class DatabaseManager:
         )
         conn.commit()
 
+    def _sync_record_request_log(
+        self,
+        timestamp: float,
+        timestamp_iso: str,
+        model_id: str,
+        action: str,
+        prompt_text: str,
+        client_key_id: int | None = None,
+        client_key_name: str | None = None,
+        google_key_id: int | None = None,
+        google_key_label: str | None = None,
+        prompt_full_json: str | dict[str, object] | None = None,
+        response_text: str = "",
+        response_full_json: str | dict[str, object] | None = None,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        latency_ms: float = 0.0,
+        status_code: int = 200,
+        error_message: str | None = None,
+    ) -> int:
+        p_json_str: str | None = None
+        if isinstance(prompt_full_json, dict):
+            p_json_str = json.dumps(prompt_full_json)
+        elif isinstance(prompt_full_json, str):
+            p_json_str = prompt_full_json
+
+        r_json_str: str | None = None
+        if isinstance(response_full_json, dict):
+            r_json_str = json.dumps(response_full_json)
+        elif isinstance(response_full_json, str):
+            r_json_str = response_full_json
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO request_logs (
+                timestamp, timestamp_iso, client_key_id, client_key_name,
+                google_key_id, google_key_label, model_id, action,
+                prompt_text, prompt_full_json, response_text, response_full_json,
+                tokens_in, tokens_out, latency_ms, status_code, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                timestamp,
+                timestamp_iso,
+                client_key_id,
+                client_key_name,
+                google_key_id,
+                google_key_label,
+                model_id,
+                action,
+                prompt_text,
+                p_json_str,
+                response_text,
+                r_json_str,
+                tokens_in,
+                tokens_out,
+                latency_ms,
+                status_code,
+                error_message,
+            ),
+        )
+        inserted_id = int(cursor.lastrowid)
+
+        # Rotation: delete older records if total count exceeds 2000
+        cursor.execute(
+            """
+            DELETE FROM request_logs
+            WHERE id NOT IN (
+                SELECT id FROM request_logs
+                ORDER BY id DESC
+                LIMIT 2000
+            );
+            """
+        )
+        conn.commit()
+        return inserted_id
+
+    def _sync_get_request_logs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        client_key_id: int | None = None,
+        google_key_id: int | None = None,
+        search: str | None = None,
+        since_timestamp: float | None = None,
+    ) -> tuple[list[dict[str, object]], int, float]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        conditions: list[str] = []
+        params: list[object] = []
+
+        if client_key_id is not None:
+            conditions.append("client_key_id = ?")
+            params.append(client_key_id)
+
+        if google_key_id is not None:
+            conditions.append("google_key_id = ?")
+            params.append(google_key_id)
+
+        if since_timestamp is not None:
+            conditions.append("timestamp > ?")
+            params.append(since_timestamp)
+
+        if search is not None and search.strip():
+            search_pattern = f"%{search.strip()}%"
+            conditions.append("(prompt_text LIKE ? OR response_text LIKE ?)")
+            params.append(search_pattern)
+            params.append(search_pattern)
+
+        where_clause = ""
+        if conditions:
+            where_clause = "WHERE " + " AND ".join(conditions)
+
+        count_sql = f"""
+            SELECT COUNT(id), COALESCE(MAX(timestamp), 0.0)
+            FROM request_logs
+            {where_clause};
+        """
+        cursor.execute(count_sql, tuple(params))
+        count_row = cursor.fetchone()
+        total_count = int(count_row[0]) if count_row else 0
+        latest_timestamp = float(count_row[1]) if count_row else 0.0
+
+        select_sql = f"""
+            SELECT *
+            FROM request_logs
+            {where_clause}
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ? OFFSET ?;
+        """
+        cursor.execute(select_sql, (*params, limit, offset))
+        rows = cursor.fetchall()
+
+        records: list[dict[str, object]] = []
+        for row in rows:
+            records.append(
+                {
+                    "id": int(row["id"]),
+                    "timestamp": float(row["timestamp"]),
+                    "timestamp_iso": str(row["timestamp_iso"]),
+                    "client_key_id": int(row["client_key_id"]) if row["client_key_id"] is not None else None,
+                    "client_key_name": str(row["client_key_name"]) if row["client_key_name"] is not None else None,
+                    "google_key_id": int(row["google_key_id"]) if row["google_key_id"] is not None else None,
+                    "google_key_label": str(row["google_key_label"]) if row["google_key_label"] is not None else None,
+                    "model_id": str(row["model_id"]),
+                    "action": str(row["action"]),
+                    "prompt_text": str(row["prompt_text"]),
+                    "prompt_full_json": str(row["prompt_full_json"]) if row["prompt_full_json"] is not None else None,
+                    "response_text": str(row["response_text"]) if row["response_text"] is not None else "",
+                    "response_full_json": str(row["response_full_json"]) if row["response_full_json"] is not None else None,
+                    "tokens_in": int(row["tokens_in"]),
+                    "tokens_out": int(row["tokens_out"]),
+                    "latency_ms": float(row["latency_ms"]),
+                    "status_code": int(row["status_code"]),
+                    "error_message": str(row["error_message"]) if row["error_message"] is not None else None,
+                }
+            )
+
+        return records, total_count, latest_timestamp
+
+    def _sync_clear_request_logs(self) -> None:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM request_logs;")
+        conn.commit()
+
     async def initialize(self) -> None:
         async with self._lock:
             await asyncio.to_thread(self._sync_init_tables)
@@ -695,6 +897,72 @@ class DatabaseManager:
             await asyncio.to_thread(
                 self._sync_record_client_usage, client_key_id, timestamp, tokens, status_code
             )
+
+    async def record_request_log(
+        self,
+        timestamp: float,
+        timestamp_iso: str,
+        model_id: str,
+        action: str,
+        prompt_text: str,
+        client_key_id: int | None = None,
+        client_key_name: str | None = None,
+        google_key_id: int | None = None,
+        google_key_label: str | None = None,
+        prompt_full_json: str | dict[str, object] | None = None,
+        response_text: str = "",
+        response_full_json: str | dict[str, object] | None = None,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        latency_ms: float = 0.0,
+        status_code: int = 200,
+        error_message: str | None = None,
+    ) -> int:
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._sync_record_request_log,
+                timestamp=timestamp,
+                timestamp_iso=timestamp_iso,
+                model_id=model_id,
+                action=action,
+                prompt_text=prompt_text,
+                client_key_id=client_key_id,
+                client_key_name=client_key_name,
+                google_key_id=google_key_id,
+                google_key_label=google_key_label,
+                prompt_full_json=prompt_full_json,
+                response_text=response_text,
+                response_full_json=response_full_json,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                latency_ms=latency_ms,
+                status_code=status_code,
+                error_message=error_message,
+            )
+
+    async def get_request_logs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        client_key_id: int | None = None,
+        google_key_id: int | None = None,
+        search: str | None = None,
+        since_timestamp: float | None = None,
+    ) -> tuple[list[dict[str, object]], int, float]:
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._sync_get_request_logs,
+                limit=limit,
+                offset=offset,
+                client_key_id=client_key_id,
+                google_key_id=google_key_id,
+                search=search,
+                since_timestamp=since_timestamp,
+            )
+
+    async def clear_request_logs(self) -> None:
+        async with self._lock:
+            await asyncio.to_thread(self._sync_clear_request_logs)
 
     async def close(self) -> None:
         async with self._lock:
@@ -869,4 +1137,70 @@ async def record_client_usage(
     await get_database().record_client_usage(
         client_key_id, timestamp, tokens, status_code
     )
+
+
+async def record_request_log(
+    timestamp: float,
+    timestamp_iso: str,
+    model_id: str,
+    action: str,
+    prompt_text: str,
+    client_key_id: int | None = None,
+    client_key_name: str | None = None,
+    google_key_id: int | None = None,
+    google_key_label: str | None = None,
+    prompt_full_json: str | dict[str, object] | None = None,
+    response_text: str = "",
+    response_full_json: str | dict[str, object] | None = None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    latency_ms: float = 0.0,
+    status_code: int = 200,
+    error_message: str | None = None,
+) -> int:
+    """Record a request log entry."""
+    return await get_database().record_request_log(
+        timestamp=timestamp,
+        timestamp_iso=timestamp_iso,
+        model_id=model_id,
+        action=action,
+        prompt_text=prompt_text,
+        client_key_id=client_key_id,
+        client_key_name=client_key_name,
+        google_key_id=google_key_id,
+        google_key_label=google_key_label,
+        prompt_full_json=prompt_full_json,
+        response_text=response_text,
+        response_full_json=response_full_json,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        latency_ms=latency_ms,
+        status_code=status_code,
+        error_message=error_message,
+    )
+
+
+async def get_request_logs(
+    limit: int = 50,
+    offset: int = 0,
+    client_key_id: int | None = None,
+    google_key_id: int | None = None,
+    search: str | None = None,
+    since_timestamp: float | None = None,
+) -> tuple[list[dict[str, object]], int, float]:
+    """Retrieve filtered request logs."""
+    return await get_database().get_request_logs(
+        limit=limit,
+        offset=offset,
+        client_key_id=client_key_id,
+        google_key_id=google_key_id,
+        search=search,
+        since_timestamp=since_timestamp,
+    )
+
+
+async def clear_request_logs() -> None:
+    """Clear all request logs."""
+    await get_database().clear_request_logs()
+
 

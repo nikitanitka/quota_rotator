@@ -5,10 +5,12 @@ Exposes Gemini v1beta proxy endpoints and REST management APIs.
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import datetime
 import json
 import logging
 from pathlib import Path
 from typing import Literal
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException, Header, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -16,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from src.contracts import (
     MAX_QUEUE_WAIT_SECONDS,
     MODEL_QUOTA_CATALOG,
+    RESET_TIMEZONE,
     ClientKeyCreateRequest,
     ClientKeyCreatedResponse,
     ClientKeyRecord,
@@ -26,8 +29,11 @@ from src.contracts import (
     PlaygroundRequest,
     PlaygroundResponse,
     PoolStatusResponse,
+    RequestLogListResponse,
+    RequestLogRecord,
     RouterErrorCode,
     RouterErrorResponse,
+    extract_text_from_contents,
     generate_client_api_key,
 )
 from src.database import DatabaseManager, get_database, init_db
@@ -315,13 +321,7 @@ async def proxy_model_action(
 ) -> Response:
     """Proxy inference requests to Google Gemini API or simulate in Dry-Run mode."""
     db = get_database()
-    client_key = await authenticate_and_verify_client(
-        request_headers=dict(request.headers),
-        query_params=dict(request.query_params),
-        db=db,
-    )
     normalized = normalize_model_id(model)
-
     is_dry = dry_run or (x_dry_run is not None and x_dry_run.lower() in ("true", "1"))
 
     raw_body = await request.body()
@@ -339,6 +339,64 @@ async def proxy_model_action(
                 error_code=RouterErrorCode.VALIDATION_ERROR,
                 message=f"Invalid JSON request body: {exc}",
             ) from exc
+
+    prompt_text = extract_text_from_contents(body_dict.get("contents") if body_dict else None)
+    if not prompt_text and body_dict:
+        prompt_text = extract_text_from_contents(body_dict)
+    if not prompt_text and body_dict:
+        prompt_text = str(body_dict)
+
+    client_key: dict[str, object] | None = None
+    try:
+        client_key = await authenticate_and_verify_client(
+            request_headers=dict(request.headers),
+            query_params=dict(request.query_params),
+            db=db,
+        )
+    except RouterException as auth_exc:
+        cid: int | None = None
+        cname: str | None = None
+        token = None
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+        if not token:
+            token = (
+                request.headers.get("x-goog-api-key")
+                or request.headers.get("x-router-key")
+                or request.query_params.get("key")
+            )
+        if token:
+            found_key = await db.get_client_key_by_token(token)
+            if found_key:
+                cid = int(found_key["id"])
+                cname = str(found_key["name"])
+
+        now_ts = time_now()
+        now_iso = datetime.now(ZoneInfo(RESET_TIMEZONE)).isoformat()
+        await db.record_request_log(
+            timestamp=now_ts,
+            timestamp_iso=now_iso,
+            client_key_id=cid,
+            client_key_name=cname,
+            google_key_id=None,
+            google_key_label=None,
+            model_id=normalized,
+            action=action,
+            prompt_text=prompt_text,
+            prompt_full_json=json.dumps(body_dict) if body_dict else None,
+            response_text="",
+            response_full_json=None,
+            tokens_in=0,
+            tokens_out=0,
+            latency_ms=0.0,
+            status_code=auth_exc.status_code,
+            error_message=auth_exc.message,
+        )
+        raise auth_exc
+
+    client_key_id = int(client_key["id"]) if client_key is not None else None
+    client_key_name = str(client_key["name"]) if client_key is not None else None
 
     timeout_val = wait_timeout
     if x_wait_timeout is not None:
@@ -415,6 +473,28 @@ async def proxy_model_action(
                         tokens=40,
                         status_code=200,
                     )
+                now_ts = time_now()
+                now_iso = datetime.now(ZoneInfo(RESET_TIMEZONE)).isoformat()
+                sim_text = f"[Dry-Run Simulation via {key_res.label}] Successful generation with model {key_res.model_id}"
+                await db.record_request_log(
+                    timestamp=now_ts,
+                    timestamp_iso=now_iso,
+                    client_key_id=client_key_id,
+                    client_key_name=client_key_name,
+                    google_key_id=key_res.key_id,
+                    google_key_label=key_res.label,
+                    model_id=normalized,
+                    action=action,
+                    prompt_text=prompt_text,
+                    prompt_full_json=json.dumps(body_dict) if body_dict else None,
+                    response_text=sim_text,
+                    response_full_json=None,
+                    tokens_in=15,
+                    tokens_out=25,
+                    latency_ms=20.0,
+                    status_code=200,
+                    error_message=None,
+                )
                 return StreamingResponse(
                     dry_run_sse_stream(), media_type="text/event-stream"
                 )
@@ -429,7 +509,8 @@ async def proxy_model_action(
                     headers=dict(request.headers),
                     db=db,
                     wait_timeout=effective_wait_timeout,
-                    client_key_id=int(client_key["id"]) if client_key is not None else None,
+                    client_key_id=client_key_id,
+                    client_key_name=client_key_name,
                 ),
                 media_type="text/event-stream",
             )
@@ -442,6 +523,8 @@ async def proxy_model_action(
         headers=dict(request.headers),
         db=db,
         wait_timeout=effective_wait_timeout,
+        client_key_id=client_key_id,
+        client_key_name=client_key_name,
     )
     if client_key is not None:
         usage_meta = result.get("usageMetadata", {}) if isinstance(result, dict) else {}
@@ -459,7 +542,88 @@ async def proxy_model_action(
     return JSONResponse(status_code=200, content=result)
 
 
+@app.get("/api/logs", response_model=RequestLogListResponse)
+async def list_request_logs(
+    limit: int = Query(50, ge=1, le=500, description="Max logs to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    client_key_id: int | None = Query(None, description="Filter by client key ID"),
+    google_key_id: int | None = Query(None, description="Filter by Google key ID"),
+    search: str | None = Query(None, description="Search keyword in prompt or response"),
+    since_timestamp: float | None = Query(None, description="Fetch logs strictly after this timestamp"),
+) -> RequestLogListResponse:
+    """Retrieve request logs with filtering and JSON payload parsing."""
+    db = get_database()
+    raw_records, total_count, latest_timestamp = await db.get_request_logs(
+        limit=limit,
+        offset=offset,
+        client_key_id=client_key_id,
+        google_key_id=google_key_id,
+        search=search,
+        since_timestamp=since_timestamp,
+    )
+
+    records: list[RequestLogRecord] = []
+    for r in raw_records:
+        prompt_full: dict[str, object] | None = None
+        raw_p = r.get("prompt_full_json")
+        if raw_p and isinstance(raw_p, str):
+            try:
+                parsed = json.loads(raw_p)
+                if isinstance(parsed, dict):
+                    prompt_full = parsed
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.debug("Failed to decode prompt_full_json: %s", exc)
+
+        response_full: dict[str, object] | None = None
+        raw_resp = r.get("response_full_json")
+        if raw_resp and isinstance(raw_resp, str):
+            try:
+                parsed = json.loads(raw_resp)
+                if isinstance(parsed, dict):
+                    response_full = parsed
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.debug("Failed to decode response_full_json: %s", exc)
+
+        records.append(
+            RequestLogRecord(
+                id=int(r["id"]),
+                timestamp=float(r["timestamp"]),
+                timestamp_iso=str(r["timestamp_iso"]),
+                client_key_id=int(r["client_key_id"]) if r.get("client_key_id") is not None else None,
+                client_key_name=str(r["client_key_name"]) if r.get("client_key_name") is not None else None,
+                google_key_id=int(r["google_key_id"]) if r.get("google_key_id") is not None else None,
+                google_key_label=str(r["google_key_label"]) if r.get("google_key_label") is not None else None,
+                model_id=str(r["model_id"]),
+                action=str(r["action"]),
+                prompt_text=str(r["prompt_text"]),
+                prompt_full=prompt_full,
+                response_text=str(r["response_text"]) if r.get("response_text") is not None else "",
+                response_full=response_full,
+                tokens_in=int(r["tokens_in"]),
+                tokens_out=int(r["tokens_out"]),
+                latency_ms=float(r["latency_ms"]),
+                status_code=int(r["status_code"]),
+                error_message=str(r["error_message"]) if r.get("error_message") is not None else None,
+            )
+        )
+
+    return RequestLogListResponse(
+        logs=records,
+        total_count=total_count,
+        latest_timestamp=latest_timestamp,
+    )
+
+
+@app.delete("/api/logs")
+async def clear_request_logs_endpoint() -> dict[str, bool]:
+    """Clear all request logs."""
+    db = get_database()
+    await db.clear_request_logs()
+    return {"ok": True}
+
+
 def time_now() -> float:
     """Helper returning current timestamp."""
     import time
     return time.time()
+

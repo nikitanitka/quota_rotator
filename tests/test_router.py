@@ -27,6 +27,8 @@ from src.contracts import (
     KeyStatus,
     PlaygroundRequest,
     PlaygroundStatus,
+    RequestLogListResponse,
+    RequestLogRecord,
     RouterErrorCode,
     generate_client_api_key,
     mask_client_api_key,
@@ -1389,6 +1391,202 @@ async def test_client_streaming_usage_recorded(
     assert k["total_requests"] == 1
     assert k["total_tokens"] == 40
     assert k["last_used_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_record_and_get_request_logs(test_db: DatabaseManager) -> None:
+    """39. Verify saving prompt, response, tokens, and latency to request_logs table."""
+    ck = await test_db.create_client_key(name="Client-Alpha", key_value="gkr-live-clientalpha1")
+    ck_id = int(ck["id"])
+
+    inserted_id = await test_db.record_request_log(
+        timestamp=1700000000.0,
+        timestamp_iso="2023-11-14T22:13:20+03:00",
+        model_id="gemini-2.5-flash",
+        action="generateContent",
+        prompt_text="Hello Gemini",
+        client_key_id=ck_id,
+        client_key_name="Client-Alpha",
+        google_key_id=2,
+        google_key_label="Key-Beta-2",
+        prompt_full_json={"contents": [{"parts": [{"text": "Hello Gemini"}]}]},
+        response_text="Hello Human",
+        response_full_json={"candidates": [{"content": {"parts": [{"text": "Hello Human"}]}}]},
+        tokens_in=10,
+        tokens_out=20,
+        latency_ms=125.5,
+        status_code=200,
+        error_message=None,
+    )
+    assert inserted_id > 0
+
+    records, total_count, latest_ts = await test_db.get_request_logs()
+    assert total_count == 1
+    assert latest_ts == 1700000000.0
+    assert len(records) == 1
+
+    rec = records[0]
+    assert rec["id"] == inserted_id
+    assert rec["model_id"] == "gemini-2.5-flash"
+    assert rec["action"] == "generateContent"
+    assert rec["prompt_text"] == "Hello Gemini"
+    assert rec["response_text"] == "Hello Human"
+    assert rec["tokens_in"] == 10
+    assert rec["tokens_out"] == 20
+    assert rec["latency_ms"] == 125.5
+    assert rec["status_code"] == 200
+    assert rec["client_key_name"] == "Client-Alpha"
+    assert rec["google_key_label"] == "Key-Beta-2"
+    assert rec["error_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_request_logs_client_key_filter(test_db: DatabaseManager) -> None:
+    """40. Verify filtering request logs by client_key_id."""
+    k1 = await test_db.create_client_key(name="Client 1", key_value="gkr-live-client1key1")
+    k2 = await test_db.create_client_key(name="Client 2", key_value="gkr-live-client2key2")
+    k1_id = int(k1["id"])
+    k2_id = int(k2["id"])
+
+    await test_db.record_request_log(
+        timestamp=1700000001.0,
+        timestamp_iso="2023-11-14T22:13:21+03:00",
+        model_id="antigravity",
+        action="generateContent",
+        prompt_text="Prompt from client 1",
+        client_key_id=k1_id,
+        client_key_name="Client 1",
+    )
+    await test_db.record_request_log(
+        timestamp=1700000002.0,
+        timestamp_iso="2023-11-14T22:13:22+03:00",
+        model_id="antigravity",
+        action="generateContent",
+        prompt_text="Prompt from client 2",
+        client_key_id=k2_id,
+        client_key_name="Client 2",
+    )
+
+    logs_k1, count_k1, _ = await test_db.get_request_logs(client_key_id=k1_id)
+    assert count_k1 == 1
+    assert len(logs_k1) == 1
+    assert logs_k1[0]["client_key_id"] == k1_id
+    assert logs_k1[0]["prompt_text"] == "Prompt from client 1"
+
+    logs_k2, count_k2, _ = await test_db.get_request_logs(client_key_id=k2_id)
+    assert count_k2 == 1
+    assert len(logs_k2) == 1
+    assert logs_k2[0]["client_key_id"] == k2_id
+    assert logs_k2[0]["prompt_text"] == "Prompt from client 2"
+
+
+@pytest.mark.asyncio
+async def test_request_logs_search(test_db: DatabaseManager) -> None:
+    """41. Verify searching request logs by keyword in prompt or response text."""
+    await test_db.record_request_log(
+        timestamp=1700000010.0,
+        timestamp_iso="2023-11-14T22:13:30+03:00",
+        model_id="antigravity",
+        action="generateContent",
+        prompt_text="Quantum physics and black holes",
+        response_text="Hawking radiation detected",
+    )
+    await test_db.record_request_log(
+        timestamp=1700000020.0,
+        timestamp_iso="2023-11-14T22:13:40+03:00",
+        model_id="antigravity",
+        action="generateContent",
+        prompt_text="Delicious chocolate cake recipe",
+        response_text="Mix flour and cocoa powder",
+    )
+
+    # Search in prompt
+    res_physics, count_p, _ = await test_db.get_request_logs(search="physics")
+    assert count_p == 1
+    assert len(res_physics) == 1
+    assert "Quantum physics" in str(res_physics[0]["prompt_text"])
+
+    # Search in response
+    res_cocoa, count_c, _ = await test_db.get_request_logs(search="cocoa")
+    assert count_c == 1
+    assert len(res_cocoa) == 1
+    assert "Mix flour" in str(res_cocoa[0]["response_text"])
+
+    # No match
+    res_none, count_n, _ = await test_db.get_request_logs(search="astronaut")
+    assert count_n == 0
+    assert len(res_none) == 0
+
+    # Since timestamp
+    res_since, count_s, _ = await test_db.get_request_logs(since_timestamp=1700000015.0)
+    assert count_s == 1
+    assert len(res_since) == 1
+    assert str(res_since[0]["prompt_text"]) == "Delicious chocolate cake recipe"
+
+
+@pytest.mark.asyncio
+async def test_request_logs_api_endpoints(
+    test_db: DatabaseManager, async_client: httpx.AsyncClient
+) -> None:
+    """42. Verify GET /api/logs and DELETE /api/logs REST endpoints."""
+    # Create client key
+    key_resp = await async_client.post(
+        "/api/client-keys",
+        json={"name": "Jury Tester", "rpm_limit": 60, "rpd_limit": 100},
+    )
+    assert key_resp.status_code == 201
+    key_data = key_resp.json()
+    token = key_data["raw_key"]
+
+    # Execute a request via proxy endpoint
+    proxy_resp = await async_client.post(
+        "/v1beta/models/antigravity:generateContent?dry_run=true",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"contents": [{"parts": [{"text": "Hello jury inspection"}]}]},
+    )
+    assert proxy_resp.status_code == 200
+
+    # GET /api/logs
+    logs_resp = await async_client.get("/api/logs")
+    assert logs_resp.status_code == 200
+    logs_data = logs_resp.json()
+    assert logs_data["total_count"] == 1
+    assert len(logs_data["logs"]) == 1
+    log_item = logs_data["logs"][0]
+    assert log_item["prompt_text"] == "Hello jury inspection"
+    assert log_item["client_key_name"] == "Jury Tester"
+    assert log_item["status_code"] == 200
+    assert "Dry-Run Simulation" in log_item["response_text"]
+    assert isinstance(log_item["prompt_full"], dict)
+
+    # Test blocked unauthorized access is logged
+    bad_resp = await async_client.post(
+        "/v1beta/models/antigravity:generateContent?dry_run=true",
+        headers={"Authorization": "Bearer gkr-live-invalidtoken"},
+        json={"contents": [{"parts": [{"text": "Blocked unauthorized request"}]}]},
+    )
+    assert bad_resp.status_code == 401
+
+    logs_after_unauth = await async_client.get("/api/logs")
+    assert logs_after_unauth.status_code == 200
+    logs_unauth_data = logs_after_unauth.json()
+    assert logs_unauth_data["total_count"] == 2
+    unauth_log = logs_unauth_data["logs"][0]
+    assert unauth_log["status_code"] == 401
+    assert unauth_log["prompt_text"] == "Blocked unauthorized request"
+    assert "Invalid Client API Key" in str(unauth_log["error_message"])
+
+    # DELETE /api/logs
+    del_resp = await async_client.delete("/api/logs")
+    assert del_resp.status_code == 200
+    assert del_resp.json() == {"ok": True}
+
+    # Verify logs are cleared
+    empty_logs = await async_client.get("/api/logs")
+    assert empty_logs.status_code == 200
+    assert empty_logs.json()["total_count"] == 0
+    assert empty_logs.json()["logs"] == []
+
 
 
 

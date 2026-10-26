@@ -104,6 +104,16 @@
           </div>
         </div>
 
+        <!-- Sound Alert Toggle Button -->
+        <button id="soundAlertBtn" onclick="toggleSoundAlerts()" class="bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 border border-slate-700/80 px-3 py-2 rounded-xl transition duration-150 flex items-center gap-2 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40" title="Toggle Jury Alarm Sound">
+          <span id="soundIconWrapper">
+            <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+            </svg>
+          </span>
+          <span id="soundAlertText" class="hidden sm:inline">Sound: ON</span>
+        </button>
+
         <!-- Manual Refresh Button -->
         <button id="refreshBtn" onclick="refreshDashboard(true)" class="bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 border border-slate-700/80 px-3 py-2 rounded-xl transition duration-150 flex items-center gap-2 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40" title="Synchronize Pool Status">
           <svg id="refreshIcon" class="w-4 h-4 text-slate-400 transition-transform duration-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -118,6 +128,32 @@
 
   <!-- Main Dashboard Container -->
   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8 z-10">
+
+    <!-- Jury Radar Live Banner -->
+    <section id="juryRadarSection" class="transition-all duration-300" aria-label="Jury Radar Live Monitor Banner">
+      <div id="juryRadarBanner" class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-lg backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-300">
+        <div class="flex items-center gap-3 w-full sm:w-auto">
+          <div id="radarIndicatorDot" class="w-3.5 h-3.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-500/50 flex-shrink-0"></div>
+          <div class="min-w-0">
+            <div id="radarBannerTitle" class="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+              <span>🟢 Jury Radar: Monitoring active</span>
+              <span class="text-xs text-slate-400 font-normal hidden sm:inline">(waiting for requests)</span>
+            </div>
+            <p id="radarBannerSubtitle" class="text-xs text-slate-400 truncate">Real-time prompt &amp; model response monitoring with repeating audio alarm</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+          <button id="radarMuteBtn" onclick="muteAlarm()" class="hidden px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm active:scale-95 animate-bounce" title="Mute active repeating alarm">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+            <span>🔇 Mute Alarm</span>
+          </button>
+          <button onclick="scrollToInspector()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md shadow-indigo-600/30 flex items-center gap-1.5 active:scale-95">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            <span>Jump to Inspector</span>
+          </button>
+        </div>
+      </div>
+    </section>
 
     <!-- Hero Stats Grid -->
     <section aria-label="Hero Stats Summary">
@@ -439,6 +475,101 @@
             </div>
 
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live Request Inspector & Jury Monitor Section -->
+    <section id="liveRequestInspector" class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-sm space-y-5" aria-label="Live Request Inspector & Jury Monitor">
+      <!-- Section Header -->
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <div class="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/><circle cx="12" cy="12" r="4"/>
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-bold text-white tracking-tight">Live Request Inspector &amp; Jury Monitor</h2>
+                <span id="inspectorStatusPill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono">
+                  <span id="inspectorStatusDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span id="inspectorStatusText">LIVE (2s)</span>
+                </span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5">Real-time inspection of prompts, messages, and model responses for jury evaluation</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric counter -->
+        <div class="flex items-center gap-2 text-xs">
+          <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl font-mono text-slate-300">
+            <span class="text-slate-500 text-[11px] font-sans">Total Logs:</span>
+            <span id="logsTotalCount" class="font-bold text-white ml-1">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Control & Filter Toolbar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1">
+          <!-- Client Filter Dropdown -->
+          <div class="flex items-center gap-2">
+            <label for="logClientFilter" class="text-xs font-semibold text-slate-300 whitespace-nowrap">Filter by Client:</label>
+            <div class="relative min-w-[170px] sm:w-52">
+              <select id="logClientFilter" onchange="onLogClientFilterChange(this.value)" class="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none cursor-pointer pr-8 font-medium">
+                <option value="">All Clients</option>
+              </select>
+              <div class="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-slate-400">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Search Input -->
+          <div class="relative flex-1">
+            <input type="text" id="logSearchInput" oninput="onLogSearchInput(this.value)" placeholder="Search in prompt, response, model, or label..." class="w-full bg-slate-900 border border-slate-800 text-white rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-slate-500">
+            <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+          <!-- Toggle Polling -->
+          <button id="togglePollingBtn" onclick="toggleInspectorPolling()" class="bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Pause or resume live polling">
+            <span id="pollingIconIndicator" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span id="pollingBtnText">Live Polling (2s)</span>
+          </button>
+
+          <!-- Test Sound -->
+          <button onclick="playAlarmChime(true)" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Test Jury Alarm Sound">
+            <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            <span>Test Sound</span>
+          </button>
+
+          <!-- Clear Logs -->
+          <button onclick="openClearLogsConfirmModal()" class="bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Clear all stored logs">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <span>Clear Logs</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Logs Card Feed Container -->
+      <div id="requestLogsList" class="space-y-4">
+        <!-- Dynamically rendered logs or empty state -->
+        <div class="py-14 text-center bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 flex flex-col items-center justify-center">
+          <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-3 border border-indigo-500/20">
+            <svg class="w-6 h-6 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/>
+            </svg>
+          </div>
+          <h4 class="text-sm font-semibold text-white">Waiting for incoming requests from jury...</h4>
+          <p class="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed">
+            New prompts, model responses, and inspection payloads will appear here in real time.
+          </p>
         </div>
       </div>
     </section>
@@ -897,6 +1028,33 @@
     </div>
   </div>
 
+  <!-- Clear Logs Confirmation Modal -->
+  <div id="clearLogsConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl transform transition-transform scale-95" id="clearLogsModalCard">
+      <div class="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center mx-auto mb-4 border border-rose-500/20">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </div>
+      <h3 class="text-base font-bold text-white text-center">Clear All Request Logs?</h3>
+      <p class="text-xs text-slate-400 text-center mt-2 leading-relaxed">
+        Are you sure you want to delete all incoming jury &amp; client request logs? This action cannot be undone.
+      </p>
+      <div class="flex items-center justify-center gap-3 mt-6">
+        <button type="button" onclick="closeClearLogsConfirmModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">
+          Cancel
+        </button>
+        <button type="button" id="confirmClearLogsBtn" onclick="confirmClearLogsAction()" class="bg-rose-600 hover:bg-rose-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-rose-600/30 flex items-center gap-2">
+          <span id="clearLogsSpinner" class="hidden">
+            <svg class="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+          </span>
+          <span>Clear All Logs</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
     <!-- Populated dynamically -->
@@ -962,6 +1120,23 @@
     let clientKeyPendingDeleteId = null;
     let currentCreatedRawKey = "";
     let isFetching = false;
+
+    // --- Live Request Inspector & Audio Alarm State ---
+    let isAlarmRinging = false;
+    let alarmIntervalId = null;
+    let audioCtx = null;
+    let soundAlertsEnabled = localStorage.getItem("gemini_sound_alerts") !== "false";
+    let requestLogs = [];
+    let isInitialLogsLoad = true;
+    let lastSeenLogId = 0;
+    let lastIncomingRequestTime = null;
+    let lastIncomingClientName = null;
+    let activeLogClientFilter = "";
+    let logSearchQuery = "";
+    let inspectorPollingActive = true;
+    let inspectorPollIntervalId = null;
+    let isLogsFetching = false;
+    let radarTickerIntervalId = null;
 
     // --- Calculate fallback MSK 10:00 reset seconds ---
     function calculateFallbackResetSeconds() {
@@ -1917,6 +2092,7 @@
         clientKeysList = Array.isArray(data) ? data : [];
         renderClientKeyCards();
         updateClientKeyCounters();
+        updateLogClientFilterOptions();
       } catch (err) {
         // Strict catch block - zero unhandled exceptions
       }
@@ -2117,12 +2293,16 @@
             </div>
 
             <!-- Card Actions -->
-            <div class="mt-5 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
+            <div class="mt-5 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap">
+              <div class="flex items-center gap-2 flex-wrap">
                 ${pauseResumeBtn}
                 <button onclick="openEditClientKeyModal(${key.id})" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700/60 transition flex items-center gap-1.5" title="Edit Limits & Status">
                   <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                   <span>Edit</span>
+                </button>
+                <button onclick="viewLogsForClient(${key.id}, '${escapeHtml(key.name).replace(/'/g, "\\'")}')" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-950/60 text-indigo-300 hover:bg-indigo-900/60 border border-indigo-700/50 transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Filter Live Inspector for this Client">
+                  <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span>👁️ View Logs</span>
                 </button>
               </div>
 
@@ -2433,6 +2613,627 @@
       }
     }
 
+    // ==========================================
+    // --- Web Audio API & Alarm Chime Logic ---
+    // ==========================================
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          audioCtx = new AudioContextClass();
+        }
+      }
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {});
+      }
+      return audioCtx;
+    }
+
+    function initAudioOnFirstUserGesture() {
+      const unlock = () => {
+        getAudioContext();
+        window.removeEventListener("click", unlock);
+        window.removeEventListener("keydown", unlock);
+        window.removeEventListener("touchstart", unlock);
+      };
+      window.addEventListener("click", unlock, { passive: true });
+      window.addEventListener("keydown", unlock, { passive: true });
+      window.addEventListener("touchstart", unlock, { passive: true });
+    }
+
+    function playAlarmChime(force = false) {
+      if (!soundAlertsEnabled && !force) return;
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        if (ctx.state === "suspended") {
+          ctx.resume().catch(() => {});
+        }
+        const now = ctx.currentTime;
+        // 3-tone arpeggio: 880Hz (A5) -> 1320Hz (E6) -> 1760Hz (A6) with smooth exponential decay
+        const notes = [
+          { freq: 880, start: 0.0, dur: 0.12 },
+          { freq: 1320, start: 0.12, dur: 0.12 },
+          { freq: 1760, start: 0.24, dur: 0.35 }
+        ];
+
+        notes.forEach(n => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(n.freq, now + n.start);
+
+          gain.gain.setValueAtTime(0.0001, now + n.start);
+          gain.gain.exponentialRampToValueAtTime(0.28, now + n.start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.start(now + n.start);
+          osc.stop(now + n.start + n.dur + 0.05);
+        });
+      } catch (e) {
+        console.warn("Audio chime error:", e);
+      }
+    }
+
+    function toggleSoundAlerts() {
+      soundAlertsEnabled = !soundAlertsEnabled;
+      localStorage.setItem("gemini_sound_alerts", soundAlertsEnabled ? "true" : "false");
+      updateSoundButtonUI();
+      if (soundAlertsEnabled) {
+        getAudioContext();
+        playAlarmChime(true);
+        showToast("Sound Alerts Enabled", "Jury alarm sound armed (test chime played)", "success");
+      } else {
+        muteAlarm();
+        showToast("Sound Alerts Disabled", "Jury alarm muted", "info");
+      }
+    }
+
+    function updateSoundButtonUI() {
+      const btn = document.getElementById("soundAlertBtn");
+      const iconWrap = document.getElementById("soundIconWrapper");
+      const txt = document.getElementById("soundAlertText");
+      if (!btn || !iconWrap || !txt) return;
+
+      if (soundAlertsEnabled) {
+        btn.classList.remove("text-slate-500", "border-slate-800");
+        btn.classList.add("text-slate-200", "border-slate-700/80");
+        iconWrap.innerHTML = `
+          <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+          </svg>`;
+        txt.innerText = "Sound: ON";
+      } else {
+        btn.classList.remove("text-slate-200", "border-slate-700/80");
+        btn.classList.add("text-slate-500", "border-slate-800");
+        iconWrap.innerHTML = `
+          <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+          </svg>`;
+        txt.innerText = "Sound: OFF";
+      }
+    }
+
+    function stopAlarmOnFocus() {
+      if (isAlarmRinging) {
+        isAlarmRinging = false;
+        if (alarmIntervalId) {
+          clearInterval(alarmIntervalId);
+          alarmIntervalId = null;
+        }
+        document.title = "Gemini Key Pool Router & Quota Control";
+        showToast("Jury Activity", "New incoming request detected from jury!", "info");
+        updateRadarBanner();
+      }
+    }
+
+    window.addEventListener("focus", stopAlarmOnFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) stopAlarmOnFocus();
+    });
+
+    function muteAlarm() {
+      if (isAlarmRinging || alarmIntervalId) {
+        isAlarmRinging = false;
+        if (alarmIntervalId) {
+          clearInterval(alarmIntervalId);
+          alarmIntervalId = null;
+        }
+        document.title = "Gemini Key Pool Router & Quota Control";
+        showToast("Alarm Muted", "Jury audio alarm stopped", "info");
+        updateRadarBanner();
+      }
+    }
+
+    // ==========================================
+    // --- Jury Radar Banner Logic ---
+    // ==========================================
+    function updateRadarBanner() {
+      const banner = document.getElementById("juryRadarBanner");
+      const dot = document.getElementById("radarIndicatorDot");
+      const title = document.getElementById("radarBannerTitle");
+      const subtitle = document.getElementById("radarBannerSubtitle");
+      const muteBtn = document.getElementById("radarMuteBtn");
+      if (!banner || !dot || !title || !subtitle || !muteBtn) return;
+
+      const secondsAgo = lastIncomingRequestTime ? Math.max(0, Math.floor(Date.now() / 1000 - lastIncomingRequestTime)) : null;
+
+      if (isAlarmRinging) {
+        // High alert state: Repeating audio alarm ringing!
+        banner.className = "bg-rose-950/70 border border-rose-500/80 rounded-2xl p-3.5 sm:p-4 shadow-xl shadow-rose-950/50 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-300 animate-pulse";
+        dot.className = "w-3.5 h-3.5 rounded-full bg-rose-400 animate-ping flex-shrink-0";
+        title.innerHTML = `
+          <span class="text-rose-300 font-extrabold flex items-center gap-1.5">
+            🚨 INCOMING JURY REQUEST DETECTED!
+          </span>
+          <span class="text-xs text-rose-200 font-medium">(${secondsAgo !== null && secondsAgo > 0 ? `${secondsAgo}s ago` : 'Just now'}) from <span class="underline decoration-rose-400 font-bold">${escapeHtml(lastIncomingClientName || 'Jury')}</span></span>
+        `;
+        subtitle.innerText = "Audio alarm active every 5s until page focus. Click Mute Alarm or jump to inspector.";
+        muteBtn.classList.remove("hidden");
+      } else if (secondsAgo !== null && secondsAgo < 45) {
+        // Recent activity state (within last 45s)
+        banner.className = "bg-indigo-950/60 border border-indigo-500/50 rounded-2xl p-3.5 sm:p-4 shadow-lg backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-300";
+        dot.className = "w-3.5 h-3.5 rounded-full bg-indigo-400 animate-pulse flex-shrink-0";
+        title.innerHTML = `
+          <span class="text-indigo-300 font-bold flex items-center gap-1.5">
+            ⚡ Recent Request Detected:
+          </span>
+          <span class="text-xs text-slate-200">(${secondsAgo < 5 ? 'Just now' : `${secondsAgo}s ago`}) from <span class="font-bold text-white">${escapeHtml(lastIncomingClientName || 'Jury')}</span></span>
+        `;
+        subtitle.innerText = "Live background polling active (2s interval) • Audio alarm armed";
+        muteBtn.classList.add("hidden");
+      } else {
+        // Normal monitoring state
+        banner.className = "bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-lg backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-300";
+        dot.className = "w-3.5 h-3.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-500/50 flex-shrink-0";
+        title.innerHTML = `
+          <span>🟢 Jury Radar: Monitoring active</span>
+          <span class="text-xs text-slate-400 font-normal hidden sm:inline">(waiting for requests)</span>
+        `;
+        subtitle.innerText = "Real-time prompt &amp; model response monitoring with repeating audio alarm";
+        muteBtn.classList.add("hidden");
+      }
+    }
+
+    function scrollToInspector() {
+      const el = document.getElementById("liveRequestInspector");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    // ==========================================
+    // --- Live Request Inspector Logic ---
+    // ==========================================
+    async function fetchRequestLogs(isInitial = false) {
+      if (isLogsFetching) return;
+      isLogsFetching = true;
+      try {
+        const res = await fetch("/api/logs?limit=100");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const incomingLogs = Array.isArray(data.logs) ? data.logs : [];
+
+        if (isInitial || isInitialLogsLoad) {
+          isInitialLogsLoad = false;
+          requestLogs = incomingLogs;
+          if (incomingLogs.length > 0) {
+            lastSeenLogId = Math.max(...incomingLogs.map(l => l.id));
+            const latest = incomingLogs[0];
+            lastIncomingRequestTime = latest.timestamp;
+            lastIncomingClientName = latest.client_key_name || (latest.client_key_id ? `Client #${latest.client_key_id}` : 'Direct API / Jury');
+          }
+          renderRequestLogs();
+          updateRadarBanner();
+          updateLogClientFilterOptions();
+          return;
+        }
+
+        // Check for new incoming requests
+        const newLogs = incomingLogs.filter(l => l.id > lastSeenLogId);
+        requestLogs = incomingLogs;
+
+        if (newLogs.length > 0) {
+          newLogs.sort((a, b) => b.id - a.id);
+          const newest = newLogs[0];
+          lastSeenLogId = Math.max(lastSeenLogId, ...newLogs.map(l => l.id));
+          lastIncomingRequestTime = newest.timestamp;
+          lastIncomingClientName = newest.client_key_name || (newest.client_key_id ? `Client #${newest.client_key_id}` : 'Direct API / Jury');
+
+          const isBackground = document.hidden || !document.hasFocus();
+          if (isBackground) {
+            isAlarmRinging = true;
+            if (alarmIntervalId === null) {
+              playAlarmChime();
+              alarmIntervalId = setInterval(playAlarmChime, 5000); // ЗВУК КАЖДЫЕ 5 СЕКУНД!
+            }
+            document.title = "🚨 [JURY REQUEST!] Gemini Key Pool Router";
+          } else {
+            playAlarmChime();
+            showToast("Jury Activity", `Incoming request from ${escapeHtml(lastIncomingClientName)}`, "info");
+          }
+        }
+
+        renderRequestLogs();
+        updateRadarBanner();
+        updateLogClientFilterOptions();
+      } catch (err) {
+        // Zero unhandled exceptions
+      } finally {
+        isLogsFetching = false;
+      }
+    }
+
+    function toggleInspectorPolling() {
+      inspectorPollingActive = !inspectorPollingActive;
+      const ind = document.getElementById("pollingIconIndicator");
+      const txt = document.getElementById("pollingBtnText");
+      const statusPill = document.getElementById("inspectorStatusPill");
+      const statusDot = document.getElementById("inspectorStatusDot");
+      const statusTxt = document.getElementById("inspectorStatusText");
+
+      if (inspectorPollingActive) {
+        if (ind) ind.className = "w-2 h-2 rounded-full bg-emerald-400";
+        if (txt) txt.innerText = "Live Polling (2s)";
+        if (statusPill) statusPill.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono";
+        if (statusDot) statusDot.className = "w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse";
+        if (statusTxt) statusTxt.innerText = "LIVE (2s)";
+        startInspectorPolling();
+        showToast("Polling Resumed", "Live inspection polling active (2s interval)", "info");
+      } else {
+        if (ind) ind.className = "w-2 h-2 rounded-full bg-amber-400";
+        if (txt) txt.innerText = "Polling: Paused";
+        if (statusPill) statusPill.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 font-mono";
+        if (statusDot) statusDot.className = "w-1.5 h-1.5 rounded-full bg-amber-400";
+        if (statusTxt) statusTxt.innerText = "PAUSED";
+        if (inspectorPollIntervalId) {
+          clearInterval(inspectorPollIntervalId);
+          inspectorPollIntervalId = null;
+        }
+        showToast("Polling Paused", "Inspection feed is currently paused", "warning");
+      }
+    }
+
+    function startInspectorPolling() {
+      if (inspectorPollIntervalId) clearInterval(inspectorPollIntervalId);
+      inspectorPollIntervalId = setInterval(() => {
+        if (inspectorPollingActive) {
+          fetchRequestLogs(false);
+        }
+      }, 2000);
+    }
+
+    function onLogClientFilterChange(val) {
+      activeLogClientFilter = val || "";
+      renderRequestLogs();
+    }
+
+    function onLogSearchInput(val) {
+      logSearchQuery = (val || "").trim().toLowerCase();
+      renderRequestLogs();
+    }
+
+    function updateLogClientFilterOptions() {
+      const select = document.getElementById("logClientFilter");
+      if (!select) return;
+      const currentVal = select.value;
+
+      const clientsMap = new Map();
+      if (Array.isArray(clientKeysList)) {
+        for (const k of clientKeysList) {
+          clientsMap.set(String(k.id), `${k.name} (${k.key_prefix})`);
+        }
+      }
+      if (Array.isArray(requestLogs)) {
+        for (const l of requestLogs) {
+          if (l.client_key_id && !clientsMap.has(String(l.client_key_id))) {
+            clientsMap.set(String(l.client_key_id), l.client_key_name || `Client #${l.client_key_id}`);
+          }
+        }
+      }
+
+      let optionsHtml = '<option value="">All Clients</option>';
+      for (const [id, label] of clientsMap.entries()) {
+        const isSelected = id === currentVal ? "selected" : "";
+        optionsHtml += `<option value="${id}" ${isSelected}>${escapeHtml(label)}</option>`;
+      }
+      select.innerHTML = optionsHtml;
+      select.value = currentVal;
+    }
+
+    function viewLogsForClient(clientKeyId, clientKeyName) {
+      activeLogClientFilter = String(clientKeyId);
+      const select = document.getElementById("logClientFilter");
+      if (select) select.value = String(clientKeyId);
+      renderRequestLogs();
+      scrollToInspector();
+      showToast("Filter Applied", `Showing requests for "${clientKeyName || 'client'}"`, "info");
+    }
+
+    function toggleLogJson(logId) {
+      const content = document.getElementById(`logJsonContent-${logId}`);
+      const icon = document.getElementById(`logJsonIcon-${logId}`);
+      const text = document.getElementById(`logJsonText-${logId}`);
+      if (!content) return;
+
+      const isHidden = content.classList.contains("hidden");
+      if (isHidden) {
+        content.classList.remove("hidden");
+        if (icon) icon.classList.add("rotate-180");
+        if (text) text.innerText = "Hide Raw JSON Payload";
+      } else {
+        content.classList.add("hidden");
+        if (icon) icon.classList.remove("rotate-180");
+        if (text) text.innerText = "Show Raw JSON Payload";
+      }
+    }
+
+    function renderRequestLogs() {
+      const container = document.getElementById("requestLogsList");
+      const totalCountElem = document.getElementById("logsTotalCount");
+      if (!container) return;
+
+      let filtered = requestLogs;
+
+      if (activeLogClientFilter) {
+        filtered = filtered.filter(l => String(l.client_key_id) === activeLogClientFilter);
+      }
+
+      if (logSearchQuery) {
+        filtered = filtered.filter(l => {
+          const p = (l.prompt_text || "").toLowerCase();
+          const r = (l.response_text || "").toLowerCase();
+          const m = (l.model_id || "").toLowerCase();
+          const c = (l.client_key_name || "").toLowerCase();
+          const g = (l.google_key_label || "").toLowerCase();
+          const e = (l.error_message || "").toLowerCase();
+          return p.includes(logSearchQuery) || r.includes(logSearchQuery) || m.includes(logSearchQuery) || c.includes(logSearchQuery) || g.includes(logSearchQuery) || e.includes(logSearchQuery);
+        });
+      }
+
+      if (totalCountElem) {
+        totalCountElem.innerText = formatNumber(requestLogs.length);
+      }
+
+      if (filtered.length === 0) {
+        if (requestLogs.length > 0) {
+          container.innerHTML = `
+            <div class="py-12 text-center bg-slate-950/40 rounded-2xl border border-slate-800 flex flex-col items-center justify-center">
+              <div class="w-10 h-10 rounded-xl bg-slate-800 text-slate-400 flex items-center justify-center mb-2">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
+              <h4 class="text-sm font-semibold text-white">No logs match your filter</h4>
+              <p class="text-xs text-slate-400 mt-1">Try clearing the client filter or search keyword.</p>
+              <button onclick="clearInspectorFilters()" class="mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 rounded-xl transition">
+                Reset Filters
+              </button>
+            </div>
+          `;
+        } else {
+          container.innerHTML = `
+            <div class="py-14 text-center bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 flex flex-col items-center justify-center">
+              <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-3 border border-indigo-500/20">
+                <svg class="w-6 h-6 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/>
+                </svg>
+              </div>
+              <h4 class="text-sm font-semibold text-white">Waiting for incoming requests from jury...</h4>
+              <p class="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed">
+                New prompts, model responses, and inspection payloads will appear here in real time.
+              </p>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      let html = "";
+      for (const log of filtered) {
+        const d = new Date(log.timestamp * 1000);
+        const timeMsk = d.toLocaleTimeString("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " MSK";
+        const dateMsk = d.toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit" });
+        const relativeTime = formatRelativeTime(log.timestamp_iso || new Date(log.timestamp * 1000).toISOString());
+
+        let statusBadgeHtml = "";
+        if (log.status_code === 200) {
+          statusBadgeHtml = `<span class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">200 OK</span>`;
+        } else if (log.status_code === 429) {
+          statusBadgeHtml = `<span class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30">429 RATE_LIMITED</span>`;
+        } else {
+          statusBadgeHtml = `<span class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">HTTP ${log.status_code}</span>`;
+        }
+
+        const clientLabel = log.client_key_name || (log.client_key_id ? `Client #${log.client_key_id}` : "Direct API / Jury");
+        const clientBadgeHtml = `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30" title="Incoming Client Authenticator">
+            <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            👤 ${escapeHtml(clientLabel)}
+          </span>
+        `;
+
+        const googleKeyLabel = log.google_key_label || (log.google_key_id ? `Key #${log.google_key_id}` : "No Key Selected");
+        const googleKeyBadgeHtml = `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-teal-500/15 text-teal-300 border border-teal-500/30" title="Routed Google API Pool Key">
+            <svg class="w-3.5 h-3.5 text-teal-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+            🔑 ${escapeHtml(googleKeyLabel)}
+          </span>
+        `;
+
+        const rawPayload = {
+          id: log.id,
+          timestamp: log.timestamp,
+          timestamp_iso: log.timestamp_iso,
+          client: clientLabel,
+          google_key: googleKeyLabel,
+          model_id: log.model_id,
+          action: log.action,
+          status_code: log.status_code,
+          latency_ms: log.latency_ms,
+          tokens_in: log.tokens_in,
+          tokens_out: log.tokens_out,
+          prompt_text: log.prompt_text,
+          prompt_full: log.prompt_full || null,
+          response_text: log.response_text,
+          response_full: log.response_full || null,
+          error_message: log.error_message
+        };
+        const rawJsonString = JSON.stringify(rawPayload, null, 2);
+        const latencyStr = typeof log.latency_ms === "number" ? `${Math.round(log.latency_ms).toLocaleString()} ms` : `${log.latency_ms} ms`;
+
+        html += `
+          <div class="bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 sm:p-5 shadow-sm transition space-y-3.5" id="request-log-${log.id}">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-800/80">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-mono text-xs text-white font-bold bg-slate-950 px-2 py-0.5 rounded border border-slate-800" title="Log ID #${log.id}">
+                  #${log.id}
+                </span>
+                <span class="font-mono text-xs text-slate-300 font-medium">
+                  ${timeMsk} <span class="text-slate-500 font-sans text-[11px]">(${dateMsk})</span>
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-400">
+                  ${relativeTime}
+                </span>
+                ${clientBadgeHtml}
+                ${googleKeyBadgeHtml}
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap self-end sm:self-auto">
+                <span class="px-2.5 py-0.5 rounded-lg bg-slate-800 text-slate-300 font-mono text-xs border border-slate-700 font-medium">
+                  ${escapeHtml(log.model_id)}
+                </span>
+                <span class="font-mono text-xs text-indigo-300 font-semibold flex items-center gap-1">
+                  ⚡ ${latencyStr}
+                </span>
+                ${statusBadgeHtml}
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+              <div class="flex flex-col">
+                <div class="flex items-center justify-between pb-1 text-xs">
+                  <span class="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    Prompt from Jury / Client
+                  </span>
+                  <button onclick="copyToClipboard(decodeURIComponent('${encodeURIComponent(log.prompt_text || '')}'), this)" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px] bg-slate-800/80 hover:bg-slate-700 px-2 py-0.5 rounded border border-slate-700/80" title="Copy Prompt Text">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy Prompt
+                  </button>
+                </div>
+                <div class="bg-slate-950 rounded-xl p-3 border-l-2 border-indigo-500 border border-slate-800/80 text-xs sm:text-sm text-slate-200 font-sans leading-relaxed max-h-56 overflow-y-auto whitespace-pre-wrap break-words flex-1">
+                  ${escapeHtml(log.prompt_text || '(Empty prompt text)')}
+                </div>
+              </div>
+
+              <div class="flex flex-col">
+                <div class="flex items-center justify-between pb-1 text-xs">
+                  <span class="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg>
+                    Model Response
+                  </span>
+                  <button onclick="copyToClipboard(decodeURIComponent('${encodeURIComponent(log.response_text || '')}'), this)" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px] bg-slate-800/80 hover:bg-slate-700 px-2 py-0.5 rounded border border-slate-700/80" title="Copy Response Text">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy Response
+                  </button>
+                </div>
+                <div class="bg-slate-950 rounded-xl p-3 border-l-2 ${log.error_message ? 'border-rose-500' : 'border-emerald-500'} border border-slate-800/80 text-xs sm:text-sm ${log.error_message ? 'text-rose-300 font-mono' : 'text-slate-200 font-sans'} leading-relaxed max-h-56 overflow-y-auto whitespace-pre-wrap break-words flex-1">
+                  ${escapeHtml(log.response_text || (log.error_message ? `Error: ${log.error_message}` : '(No text response)'))}
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800/60 flex flex-col gap-2">
+              <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono flex-wrap gap-2">
+                <div class="flex items-center gap-3">
+                  <span>Tokens In: <strong class="text-slate-200">${formatNumber(log.tokens_in || 0)}</strong></span>
+                  <span class="text-slate-700">•</span>
+                  <span>Tokens Out: <strong class="text-slate-200">${formatNumber(log.tokens_out || 0)}</strong></span>
+                  <span class="text-slate-700">•</span>
+                  <span>Action: <strong class="text-indigo-300 font-sans">${escapeHtml(log.action)}</strong></span>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <button type="button" onclick="toggleLogJson(${log.id})" class="text-xs text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1 focus:outline-none font-sans font-medium">
+                    <svg id="logJsonIcon-${log.id}" class="w-3.5 h-3.5 transition-transform duration-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                    <span id="logJsonText-${log.id}">Show Raw JSON Payload</span>
+                  </button>
+                  <button onclick="copyToClipboard(decodeURIComponent('${encodeURIComponent(rawJsonString)}'), this)" class="text-slate-500 hover:text-slate-300 transition text-[11px] flex items-center gap-1 font-sans">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy JSON
+                  </button>
+                </div>
+              </div>
+
+              <div id="logJsonContent-${log.id}" class="hidden mt-1.5 bg-slate-950 rounded-xl p-3 border border-slate-800/80 overflow-x-auto max-h-60 overflow-y-auto">
+                <pre class="text-[11px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed">${escapeHtml(rawJsonString)}</pre>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+
+    function clearInspectorFilters() {
+      activeLogClientFilter = "";
+      logSearchQuery = "";
+      const select = document.getElementById("logClientFilter");
+      const search = document.getElementById("logSearchInput");
+      if (select) select.value = "";
+      if (search) search.value = "";
+      renderRequestLogs();
+      showToast("Filters Reset", "Showing all requests", "info");
+    }
+
+    // --- Clear Logs Modal Handlers ---
+    function openClearLogsConfirmModal() {
+      const modal = document.getElementById("clearLogsConfirmModal");
+      if (!modal) return;
+      modal.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        modal.classList.remove("opacity-0");
+        modal.classList.add("opacity-100");
+      });
+    }
+
+    function closeClearLogsConfirmModal() {
+      const modal = document.getElementById("clearLogsConfirmModal");
+      if (!modal) return;
+      modal.classList.remove("opacity-100");
+      modal.classList.add("opacity-0");
+      setTimeout(() => modal.classList.add("hidden"), 200);
+    }
+
+    async function confirmClearLogsAction() {
+      const spinner = document.getElementById("clearLogsSpinner");
+      const submitBtn = document.getElementById("confirmClearLogsBtn");
+      if (spinner) spinner.classList.remove("hidden");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await fetch("/api/logs", { method: "DELETE" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        closeClearLogsConfirmModal();
+        requestLogs = [];
+        lastSeenLogId = 0;
+        lastIncomingRequestTime = null;
+        lastIncomingClientName = null;
+        muteAlarm();
+        renderRequestLogs();
+        updateRadarBanner();
+        showToast("Logs Cleared", "All request logs have been successfully cleared", "success");
+      } catch (err) {
+        showToast("Clear Failed", err.message || "Failed to clear request logs", "error");
+      } finally {
+        if (spinner) spinner.classList.add("hidden");
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    }
+
     // --- Close Modals on ESC Key ---
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -2442,6 +3243,7 @@
         closeClientKeyCreatedModal();
         closeEditClientKeyModal();
         closeDeleteClientKeyModal();
+        closeClearLogsConfirmModal();
       }
     });
 
@@ -2460,13 +3262,25 @@
       // 3. Start live countdown interval
       startCountdownTicker();
 
-      // 4. Initial fetch
-      refreshDashboard(false);
+      // 4. Initialize Web Audio unlock & sound UI
+      initAudioOnFirstUserGesture();
+      updateSoundButtonUI();
 
-      // 5. Setup periodic background polling every 4.5 seconds
+      // 5. Initial fetch of dashboard data & request logs
+      refreshDashboard(false);
+      fetchRequestLogs(true);
+
+      // 6. Setup periodic dashboard polling (every 4.5s) and live logs polling (every 2.0s)
       pollIntervalId = setInterval(() => {
         refreshDashboard(false);
       }, 4500);
+
+      startInspectorPolling();
+
+      // 7. Start live radar elapsed time ticker (every 1.0s)
+      radarTickerIntervalId = setInterval(() => {
+        updateRadarBanner();
+      }, 1000);
     });
   </script>
 </body>

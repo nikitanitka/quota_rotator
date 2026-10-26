@@ -37,6 +37,7 @@ from src.contracts import (
     RouterErrorResponse,
     calculate_next_reset_time,
     calculate_seconds_until_reset,
+    extract_text_from_contents,
     mask_api_key,
     mask_client_api_key,
 )
@@ -410,9 +411,22 @@ async def execute_request(
     db: DatabaseManager,
     out_selected_key: list[KeySelectionResult] | None = None,
     wait_timeout: float = 0.0,
+    client_key_id: int | None = None,
+    client_key_name: str | None = None,
 ) -> dict[str, object]:
     """Execute API request either in dry-run mode or proxied to Google Upstream API with retries."""
+    start_time = time.perf_counter()
     limit = get_model_limit(model_id)
+
+    prompt_text = ""
+    if body:
+        prompt_text = extract_text_from_contents(body.get("contents") if isinstance(body, dict) else None)
+        if not prompt_text and isinstance(body, dict):
+            prompt_text = extract_text_from_contents(body)
+        if not prompt_text and body:
+            prompt_text = str(body)
+
+    prompt_full_json = json.dumps(body) if body is not None else None
 
     if is_dry_run:
         key_res = await select_best_key_with_wait(
@@ -434,13 +448,14 @@ async def execute_request(
                 status_code=200,
                 is_dry_run=True,
             )
-            return {
+            sim_text = f"[Dry-Run Simulation via {key_res.label}] Successful generation with model {key_res.model_id}"
+            resp_data = {
                 "candidates": [
                     {
                         "content": {
                             "parts": [
                                 {
-                                    "text": f"[Dry-Run Simulation via {key_res.label}] Successful generation with model {key_res.model_id}"
+                                    "text": sim_text
                                 }
                             ],
                             "role": "model",
@@ -455,6 +470,29 @@ async def execute_request(
                     "totalTokenCount": tokens_in + tokens_out,
                 },
             }
+            latency_ms = (time.perf_counter() - start_time) * 1000.0
+            now_ts = time.time()
+            now_iso = datetime.now(ZoneInfo(RESET_TIMEZONE)).isoformat()
+            await db.record_request_log(
+                timestamp=now_ts,
+                timestamp_iso=now_iso,
+                client_key_id=client_key_id,
+                client_key_name=client_key_name,
+                google_key_id=key_res.key_id,
+                google_key_label=key_res.label,
+                model_id=limit.model_id,
+                action=action,
+                prompt_text=prompt_text,
+                prompt_full_json=prompt_full_json,
+                response_text=sim_text,
+                response_full_json=json.dumps(resp_data),
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                latency_ms=latency_ms,
+                status_code=200,
+                error_message=None,
+            )
+            return resp_data
         finally:
             await decrement_in_flight(key_res.key_id)
 
@@ -467,148 +505,222 @@ async def execute_request(
 
     last_error_status: int = 502
     last_error_message: str = "Request routing could not be completed."
+    last_key_id: int | None = None
     last_key_label: str | None = None
 
-    for attempt in range(3):
-        try:
-            key_res = await select_best_key_with_wait(
-                limit.model_id,
-                db,
-                wait_timeout=wait_timeout,
-                exclude_ids=excluded_key_ids,
-                acquire_in_flight=True,
-            )
-        except RouterException as exc:
-            if attempt > 0 and last_error_status in (500, 502, 503, 504):
-                raise RouterException(
-                    status_code=last_error_status,
-                    error_code=RouterErrorCode.UPSTREAM_ERROR,
-                    message=last_error_message,
-                    selected_key_label=last_key_label,
-                ) from exc
-            raise
-
-        try:
-            if out_selected_key is not None:
-                out_selected_key.append(key_res)
-
-            req_headers = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": key_res.key_value,
-            }
+    try:
+        for attempt in range(3):
+            try:
+                key_res = await select_best_key_with_wait(
+                    limit.model_id,
+                    db,
+                    wait_timeout=wait_timeout,
+                    exclude_ids=excluded_key_ids,
+                    acquire_in_flight=True,
+                )
+                last_key_id = key_res.key_id
+                last_key_label = key_res.label
+            except RouterException as exc:
+                if attempt > 0 and last_error_status in (500, 502, 503, 504):
+                    raise RouterException(
+                        status_code=last_error_status,
+                        error_code=RouterErrorCode.UPSTREAM_ERROR,
+                        message=last_error_message,
+                        selected_key_label=last_key_label,
+                    ) from exc
+                raise
 
             try:
-                resp = await client.post(
-                    upstream_url,
-                    json=body or {},
-                    headers=req_headers,
-                )
-            except httpx.RequestError as exc:
-                logger.warning(
-                    f"Upstream network error on key {key_res.key_id} ({key_res.label}): {exc}. "
-                    f"Applying soft cooldown {COOLDOWN_SOFT_ERROR_SECONDS}s and retrying..."
-                )
-                await db.set_cooldown(key_res.key_id, COOLDOWN_SOFT_ERROR_SECONDS)
-                await db.record_usage(
-                    key_id=key_res.key_id,
-                    model_id=key_res.model_id,
-                    action=action,
-                    timestamp=time.time(),
-                    tokens_in=0,
-                    tokens_out=0,
-                    status_code=502,
-                    is_dry_run=False,
-                )
-                excluded_key_ids.add(key_res.key_id)
-                last_error_status = 502
-                last_error_message = f"Network error communicating with upstream: {exc}"
-                last_key_label = key_res.label
-                if attempt < 2:
-                    await asyncio.sleep(random.uniform(0.2, 0.5))
-                    continue
-                raise RouterException(
-                    status_code=502,
-                    error_code=RouterErrorCode.UPSTREAM_ERROR,
-                    message=last_error_message,
-                    selected_key_label=key_res.label,
-                ) from exc
+                if out_selected_key is not None:
+                    out_selected_key.append(key_res)
 
-            # 429 Rate Limited
-            if resp.status_code == 429:
-                current_key = await db.get_key_by_id(key_res.key_id)
-                consecutive = int(current_key["consecutive_429"]) if current_key else 0
-                cooldown = (
-                    COOLDOWN_INITIAL_SECONDS
-                    if consecutive == 0
-                    else COOLDOWN_SECONDARY_SECONDS
-                )
-                new_consecutive = 1 if consecutive == 0 else 2
+                req_headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": key_res.key_value,
+                }
 
-                await db.set_cooldown(key_res.key_id, cooldown, new_consecutive)
-                await db.record_usage(
-                    key_id=key_res.key_id,
-                    model_id=key_res.model_id,
-                    action=action,
-                    timestamp=time.time(),
-                    tokens_in=0,
-                    tokens_out=0,
-                    status_code=429,
-                    is_dry_run=False,
-                )
-                excluded_key_ids.add(key_res.key_id)
-                last_error_status = 429
-                last_error_message = (
-                    "Upstream returned 429 and all retry attempts were exhausted."
-                )
-                last_key_label = key_res.label
-                if attempt < 2:
-                    await asyncio.sleep(random.uniform(0.2, 0.5))
-                    continue
-                raise RouterException(
-                    status_code=429,
-                    error_code=RouterErrorCode.ALL_KEYS_RATE_LIMITED,
-                    message=last_error_message,
-                    retry_after_seconds=cooldown,
-                    selected_key_label=key_res.label,
-                )
+                try:
+                    resp = await client.post(
+                        upstream_url,
+                        json=body or {},
+                        headers=req_headers,
+                    )
+                except httpx.RequestError as exc:
+                    logger.warning(
+                        f"Upstream network error on key {key_res.key_id} ({key_res.label}): {exc}. "
+                        f"Applying soft cooldown {COOLDOWN_SOFT_ERROR_SECONDS}s and retrying..."
+                    )
+                    await db.set_cooldown(key_res.key_id, COOLDOWN_SOFT_ERROR_SECONDS)
+                    await db.record_usage(
+                        key_id=key_res.key_id,
+                        model_id=key_res.model_id,
+                        action=action,
+                        timestamp=time.time(),
+                        tokens_in=0,
+                        tokens_out=0,
+                        status_code=502,
+                        is_dry_run=False,
+                    )
+                    excluded_key_ids.add(key_res.key_id)
+                    last_error_status = 502
+                    last_error_message = f"Network error communicating with upstream: {exc}"
+                    last_key_label = key_res.label
+                    if attempt < 2:
+                        await asyncio.sleep(random.uniform(0.2, 0.5))
+                        continue
+                    raise RouterException(
+                        status_code=502,
+                        error_code=RouterErrorCode.UPSTREAM_ERROR,
+                        message=last_error_message,
+                        selected_key_label=key_res.label,
+                    ) from exc
 
-            # 200 OK
-            if resp.status_code == 200:
-                await db.reset_429_counter(key_res.key_id)
-                data = resp.json()
-                usage_meta = (
-                    data.get("usageMetadata", {}) if isinstance(data, dict) else {}
-                )
-                tokens_in = (
-                    int(usage_meta.get("promptTokenCount", 0))
-                    if isinstance(usage_meta, dict)
-                    else 0
-                )
-                tokens_out = (
-                    int(usage_meta.get("candidatesTokenCount", 0))
-                    if isinstance(usage_meta, dict)
-                    else 0
-                )
+                # 429 Rate Limited
+                if resp.status_code == 429:
+                    current_key = await db.get_key_by_id(key_res.key_id)
+                    consecutive = int(current_key["consecutive_429"]) if current_key else 0
+                    cooldown = (
+                        COOLDOWN_INITIAL_SECONDS
+                        if consecutive == 0
+                        else COOLDOWN_SECONDARY_SECONDS
+                    )
+                    new_consecutive = 1 if consecutive == 0 else 2
 
-                await db.record_usage(
-                    key_id=key_res.key_id,
-                    model_id=key_res.model_id,
-                    action=action,
-                    timestamp=time.time(),
-                    tokens_in=tokens_in,
-                    tokens_out=tokens_out,
-                    status_code=200,
-                    is_dry_run=False,
-                )
-                return data
+                    await db.set_cooldown(key_res.key_id, cooldown, new_consecutive)
+                    await db.record_usage(
+                        key_id=key_res.key_id,
+                        model_id=key_res.model_id,
+                        action=action,
+                        timestamp=time.time(),
+                        tokens_in=0,
+                        tokens_out=0,
+                        status_code=429,
+                        is_dry_run=False,
+                    )
+                    excluded_key_ids.add(key_res.key_id)
+                    last_error_status = 429
+                    last_error_message = (
+                        "Upstream returned 429 and all retry attempts were exhausted."
+                    )
+                    last_key_label = key_res.label
+                    if attempt < 2:
+                        await asyncio.sleep(random.uniform(0.2, 0.5))
+                        continue
+                    raise RouterException(
+                        status_code=429,
+                        error_code=RouterErrorCode.ALL_KEYS_RATE_LIMITED,
+                        message=last_error_message,
+                        retry_after_seconds=cooldown,
+                        selected_key_label=key_res.label,
+                    )
 
-            # 500, 502, 503, 504 Upstream Server Errors / Overloaded
-            if resp.status_code in (500, 502, 503, 504):
-                logger.warning(
-                    f"Upstream returned HTTP {resp.status_code} on key {key_res.key_id} ({key_res.label}): {resp.text[:100]}. "
-                    f"Applying soft cooldown {COOLDOWN_SOFT_ERROR_SECONDS}s and retrying..."
-                )
-                await db.set_cooldown(key_res.key_id, COOLDOWN_SOFT_ERROR_SECONDS)
+                # 200 OK
+                if resp.status_code == 200:
+                    await db.reset_429_counter(key_res.key_id)
+                    data = resp.json()
+                    usage_meta = (
+                        data.get("usageMetadata", {}) if isinstance(data, dict) else {}
+                    )
+                    tokens_in = (
+                        int(usage_meta.get("promptTokenCount", 0))
+                        if isinstance(usage_meta, dict)
+                        else 0
+                    )
+                    tokens_out = (
+                        int(usage_meta.get("candidatesTokenCount", 0))
+                        if isinstance(usage_meta, dict)
+                        else 0
+                    )
+
+                    await db.record_usage(
+                        key_id=key_res.key_id,
+                        model_id=key_res.model_id,
+                        action=action,
+                        timestamp=time.time(),
+                        tokens_in=tokens_in,
+                        tokens_out=tokens_out,
+                        status_code=200,
+                        is_dry_run=False,
+                    )
+
+                    response_text = ""
+                    if isinstance(data, dict):
+                        candidates = data.get("candidates")
+                        if isinstance(candidates, list) and candidates:
+                            first_cand = candidates[0]
+                            if isinstance(first_cand, dict):
+                                content = first_cand.get("content")
+                                if isinstance(content, dict):
+                                    parts = content.get("parts")
+                                    if isinstance(parts, list):
+                                        texts: list[str] = []
+                                        for p in parts:
+                                            if isinstance(p, dict) and "text" in p and isinstance(p["text"], str):
+                                                texts.append(p["text"])
+                                            elif isinstance(p, str):
+                                                texts.append(p)
+                                        response_text = "".join(texts)
+                    if not response_text and isinstance(data, dict) and "candidates" in data:
+                        response_text = extract_text_from_contents(data.get("candidates"))
+
+                    latency_ms = (time.perf_counter() - start_time) * 1000.0
+                    now_ts = time.time()
+                    now_iso = datetime.now(ZoneInfo(RESET_TIMEZONE)).isoformat()
+                    await db.record_request_log(
+                        timestamp=now_ts,
+                        timestamp_iso=now_iso,
+                        client_key_id=client_key_id,
+                        client_key_name=client_key_name,
+                        google_key_id=key_res.key_id,
+                        google_key_label=key_res.label,
+                        model_id=limit.model_id,
+                        action=action,
+                        prompt_text=prompt_text,
+                        prompt_full_json=prompt_full_json,
+                        response_text=response_text,
+                        response_full_json=json.dumps(data) if data is not None else None,
+                        tokens_in=tokens_in,
+                        tokens_out=tokens_out,
+                        latency_ms=latency_ms,
+                        status_code=200,
+                        error_message=None,
+                    )
+                    return data
+
+                # 500, 502, 503, 504 Upstream Server Errors / Overloaded
+                if resp.status_code in (500, 502, 503, 504):
+                    logger.warning(
+                        f"Upstream returned HTTP {resp.status_code} on key {key_res.key_id} ({key_res.label}): {resp.text[:100]}. "
+                        f"Applying soft cooldown {COOLDOWN_SOFT_ERROR_SECONDS}s and retrying..."
+                    )
+                    await db.set_cooldown(key_res.key_id, COOLDOWN_SOFT_ERROR_SECONDS)
+                    await db.record_usage(
+                        key_id=key_res.key_id,
+                        model_id=key_res.model_id,
+                        action=action,
+                        timestamp=time.time(),
+                        tokens_in=0,
+                        tokens_out=0,
+                        status_code=resp.status_code,
+                        is_dry_run=False,
+                    )
+                    excluded_key_ids.add(key_res.key_id)
+                    last_error_status = resp.status_code
+                    last_error_message = (
+                        f"Upstream returned HTTP {resp.status_code}: {resp.text}"
+                    )
+                    last_key_label = key_res.label
+                    if attempt < 2:
+                        await asyncio.sleep(random.uniform(0.2, 0.5))
+                        continue
+                    raise RouterException(
+                        status_code=resp.status_code,
+                        error_code=RouterErrorCode.UPSTREAM_ERROR,
+                        message=last_error_message,
+                        selected_key_label=key_res.label,
+                    )
+
+                # Permanent client errors (400, 401, 403, 404, etc.)
                 await db.record_usage(
                     key_id=key_res.key_id,
                     model_id=key_res.model_id,
@@ -619,48 +731,45 @@ async def execute_request(
                     status_code=resp.status_code,
                     is_dry_run=False,
                 )
-                excluded_key_ids.add(key_res.key_id)
-                last_error_status = resp.status_code
-                last_error_message = (
-                    f"Upstream returned HTTP {resp.status_code}: {resp.text}"
-                )
-                last_key_label = key_res.label
-                if attempt < 2:
-                    await asyncio.sleep(random.uniform(0.2, 0.5))
-                    continue
                 raise RouterException(
                     status_code=resp.status_code,
                     error_code=RouterErrorCode.UPSTREAM_ERROR,
-                    message=last_error_message,
+                    message=f"Upstream returned HTTP {resp.status_code}: {resp.text}",
                     selected_key_label=key_res.label,
                 )
+            finally:
+                await decrement_in_flight(key_res.key_id)
 
-            # Permanent client errors (400, 401, 403, 404, etc.)
-            await db.record_usage(
-                key_id=key_res.key_id,
-                model_id=key_res.model_id,
-                action=action,
-                timestamp=time.time(),
-                tokens_in=0,
-                tokens_out=0,
-                status_code=resp.status_code,
-                is_dry_run=False,
-            )
-            raise RouterException(
-                status_code=resp.status_code,
-                error_code=RouterErrorCode.UPSTREAM_ERROR,
-                message=f"Upstream returned HTTP {resp.status_code}: {resp.text}",
-                selected_key_label=key_res.label,
-            )
-        finally:
-            await decrement_in_flight(key_res.key_id)
-
-    raise RouterException(
-        status_code=last_error_status,
-        error_code=RouterErrorCode.UPSTREAM_ERROR,
-        message=last_error_message,
-        selected_key_label=last_key_label,
-    )
+        raise RouterException(
+            status_code=last_error_status,
+            error_code=RouterErrorCode.UPSTREAM_ERROR,
+            message=last_error_message,
+            selected_key_label=last_key_label,
+        )
+    except RouterException as exc:
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        now_ts = time.time()
+        now_iso = datetime.now(ZoneInfo(RESET_TIMEZONE)).isoformat()
+        await db.record_request_log(
+            timestamp=now_ts,
+            timestamp_iso=now_iso,
+            client_key_id=client_key_id,
+            client_key_name=client_key_name,
+            google_key_id=last_key_id,
+            google_key_label=exc.selected_key_label or last_key_label,
+            model_id=limit.model_id,
+            action=action,
+            prompt_text=prompt_text,
+            prompt_full_json=prompt_full_json,
+            response_text="",
+            response_full_json=None,
+            tokens_in=0,
+            tokens_out=0,
+            latency_ms=latency_ms,
+            status_code=exc.status_code,
+            error_message=exc.message,
+        )
+        raise
 
 
 async def execute_streaming_request(
@@ -671,9 +780,22 @@ async def execute_streaming_request(
     db: DatabaseManager,
     wait_timeout: float = 0.0,
     client_key_id: int | None = None,
+    client_key_name: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Proxy streaming request (streamGenerateContent) to Google Upstream API with retries."""
+    start_time = time.perf_counter()
     limit = get_model_limit(model_id)
+
+    prompt_text = ""
+    if body:
+        prompt_text = extract_text_from_contents(body.get("contents") if isinstance(body, dict) else None)
+        if not prompt_text and isinstance(body, dict):
+            prompt_text = extract_text_from_contents(body)
+        if not prompt_text and body:
+            prompt_text = str(body)
+
+    prompt_full_json = json.dumps(body) if body is not None else None
+
     excluded_key_ids: set[int] = set()
     upstream_model = UPSTREAM_MODEL_ALIASES.get(limit.model_id, limit.model_id)
     clean_action = action.split("?")[0]
@@ -684,220 +806,286 @@ async def execute_streaming_request(
 
     last_error_status: int = 502
     last_error_message: str = "Streaming request routing could not be completed."
+    last_key_id: int | None = None
     last_key_label: str | None = None
 
-    for attempt in range(3):
-        try:
-            key_res = await select_best_key_with_wait(
-                limit.model_id,
-                db,
-                wait_timeout=wait_timeout,
-                exclude_ids=excluded_key_ids,
-                acquire_in_flight=True,
-            )
-        except RouterException as exc:
-            if attempt > 0 and last_error_status in (500, 502, 503, 504):
-                raise RouterException(
-                    status_code=last_error_status,
-                    error_code=RouterErrorCode.UPSTREAM_ERROR,
-                    message=last_error_message,
-                    selected_key_label=last_key_label,
-                ) from exc
-            raise
-
-        req_headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": key_res.key_value,
-        }
-
-        should_retry = False
-        try:
+    try:
+        for attempt in range(3):
             try:
-                stream_ctx = client.stream(
-                    "POST",
-                    upstream_url,
-                    json=body or {},
-                    headers=req_headers,
+                key_res = await select_best_key_with_wait(
+                    limit.model_id,
+                    db,
+                    wait_timeout=wait_timeout,
+                    exclude_ids=excluded_key_ids,
+                    acquire_in_flight=True,
                 )
-                async with stream_ctx as resp:
-                    if resp.status_code == 429:
-                        error_text = (await resp.aread()).decode("utf-8", errors="replace")
-                        current_key = await db.get_key_by_id(key_res.key_id)
-                        consecutive = int(current_key["consecutive_429"]) if current_key else 0
-                        cooldown = (
-                            COOLDOWN_INITIAL_SECONDS
-                            if consecutive == 0
-                            else COOLDOWN_SECONDARY_SECONDS
-                        )
-                        new_consecutive = 1 if consecutive == 0 else 2
-                        await db.set_cooldown(key_res.key_id, cooldown, new_consecutive)
-                        await db.record_usage(
-                            key_id=key_res.key_id,
-                            model_id=key_res.model_id,
-                            action=action,
-                            timestamp=time.time(),
-                            tokens_in=0,
-                            tokens_out=0,
-                            status_code=429,
-                            is_dry_run=False,
-                        )
-                        excluded_key_ids.add(key_res.key_id)
-                        last_error_status = 429
-                        last_error_message = (
-                            "Upstream returned 429 and all retry attempts were exhausted."
-                        )
-                        last_key_label = key_res.label
-                        if attempt < 2:
-                            should_retry = True
-                        else:
-                            raise RouterException(
-                                status_code=429,
-                                error_code=RouterErrorCode.ALL_KEYS_RATE_LIMITED,
-                                message=last_error_message,
-                                retry_after_seconds=cooldown,
-                                selected_key_label=key_res.label,
-                            )
+                last_key_id = key_res.key_id
+                last_key_label = key_res.label
+            except RouterException as exc:
+                if attempt > 0 and last_error_status in (500, 502, 503, 504):
+                    raise RouterException(
+                        status_code=last_error_status,
+                        error_code=RouterErrorCode.UPSTREAM_ERROR,
+                        message=last_error_message,
+                        selected_key_label=last_key_label,
+                    ) from exc
+                raise
 
-                    elif resp.status_code in (500, 502, 503, 504):
-                        error_text = (await resp.aread()).decode("utf-8", errors="replace")
-                        logger.warning(
-                            f"Upstream returned HTTP {resp.status_code} on key {key_res.key_id} ({key_res.label}): {error_text[:100]}. "
-                            f"Applying soft cooldown {COOLDOWN_SOFT_ERROR_SECONDS}s and retrying..."
-                        )
-                        await db.set_cooldown(key_res.key_id, COOLDOWN_SOFT_ERROR_SECONDS)
-                        await db.record_usage(
-                            key_id=key_res.key_id,
-                            model_id=key_res.model_id,
-                            action=action,
-                            timestamp=time.time(),
-                            tokens_in=0,
-                            tokens_out=0,
-                            status_code=resp.status_code,
-                            is_dry_run=False,
-                        )
-                        excluded_key_ids.add(key_res.key_id)
-                        last_error_status = resp.status_code
-                        last_error_message = (
-                            f"Upstream returned HTTP {resp.status_code}: {error_text}"
-                        )
-                        last_key_label = key_res.label
-                        if attempt < 2:
-                            should_retry = True
-                        else:
-                            raise RouterException(
-                                status_code=resp.status_code,
-                                error_code=RouterErrorCode.UPSTREAM_ERROR,
-                                message=last_error_message,
-                                selected_key_label=key_res.label,
-                            )
+            req_headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": key_res.key_value,
+            }
 
-                    elif resp.status_code == 200:
-                        await db.reset_429_counter(key_res.key_id)
-                        tokens_in = 0
-                        tokens_out = 0
-                        stream_success = False
-                        try:
-                            async for line in resp.aiter_lines():
-                                yield f"{line}\n"
-                                if line.startswith("data:"):
-                                    json_str = line[len("data:"):].strip()
-                                    if json_str:
-                                        try:
-                                            chunk = json.loads(json_str)
-                                            if isinstance(chunk, dict):
-                                                usage = chunk.get("usageMetadata")
-                                                if isinstance(usage, dict):
-                                                    tokens_in = int(
-                                                        usage.get("promptTokenCount", tokens_in)
-                                                    )
-                                                    tokens_out = int(
-                                                        usage.get("candidatesTokenCount", tokens_out)
-                                                    )
-                                        except (json.JSONDecodeError, ValueError) as exc:
-                                            logger.debug(
-                                                "Failed to parse SSE line JSON: %s", exc
-                                            )
-                            stream_success = True
-                        finally:
+            should_retry = False
+            try:
+                try:
+                    stream_ctx = client.stream(
+                        "POST",
+                        upstream_url,
+                        json=body or {},
+                        headers=req_headers,
+                    )
+                    async with stream_ctx as resp:
+                        if resp.status_code == 429:
+                            error_text = (await resp.aread()).decode("utf-8", errors="replace")
+                            current_key = await db.get_key_by_id(key_res.key_id)
+                            consecutive = int(current_key["consecutive_429"]) if current_key else 0
+                            cooldown = (
+                                COOLDOWN_INITIAL_SECONDS
+                                if consecutive == 0
+                                else COOLDOWN_SECONDARY_SECONDS
+                            )
+                            new_consecutive = 1 if consecutive == 0 else 2
+                            await db.set_cooldown(key_res.key_id, cooldown, new_consecutive)
                             await db.record_usage(
                                 key_id=key_res.key_id,
                                 model_id=key_res.model_id,
                                 action=action,
                                 timestamp=time.time(),
-                                tokens_in=tokens_in,
-                                tokens_out=tokens_out,
-                                status_code=200 if stream_success else 500,
+                                tokens_in=0,
+                                tokens_out=0,
+                                status_code=429,
                                 is_dry_run=False,
                             )
-                            if client_key_id is not None:
-                                await db.record_client_usage(
-                                    client_key_id=client_key_id,
-                                    timestamp=time.time(),
-                                    tokens=tokens_in + tokens_out,
-                                    status_code=200 if stream_success else 500,
+                            excluded_key_ids.add(key_res.key_id)
+                            last_error_status = 429
+                            last_error_message = (
+                                "Upstream returned 429 and all retry attempts were exhausted."
+                            )
+                            last_key_label = key_res.label
+                            if attempt < 2:
+                                should_retry = True
+                            else:
+                                raise RouterException(
+                                    status_code=429,
+                                    error_code=RouterErrorCode.ALL_KEYS_RATE_LIMITED,
+                                    message=last_error_message,
+                                    retry_after_seconds=cooldown,
+                                    selected_key_label=key_res.label,
                                 )
-                        return
 
-                    else:
-                        error_text = (await resp.aread()).decode("utf-8", errors="replace")
-                        await db.record_usage(
-                            key_id=key_res.key_id,
-                            model_id=key_res.model_id,
-                            action=action,
-                            timestamp=time.time(),
-                            tokens_in=0,
-                            tokens_out=0,
-                            status_code=resp.status_code,
-                            is_dry_run=False,
-                        )
-                        raise RouterException(
-                            status_code=resp.status_code,
-                            error_code=RouterErrorCode.UPSTREAM_ERROR,
-                            message=f"Upstream returned HTTP {resp.status_code}: {error_text}",
-                            selected_key_label=key_res.label,
-                        )
+                        elif resp.status_code in (500, 502, 503, 504):
+                            error_text = (await resp.aread()).decode("utf-8", errors="replace")
+                            logger.warning(
+                                f"Upstream returned HTTP {resp.status_code} on key {key_res.key_id} ({key_res.label}): {error_text[:100]}. "
+                                f"Applying soft cooldown {COOLDOWN_SOFT_ERROR_SECONDS}s and retrying..."
+                            )
+                            await db.set_cooldown(key_res.key_id, COOLDOWN_SOFT_ERROR_SECONDS)
+                            await db.record_usage(
+                                key_id=key_res.key_id,
+                                model_id=key_res.model_id,
+                                action=action,
+                                timestamp=time.time(),
+                                tokens_in=0,
+                                tokens_out=0,
+                                status_code=resp.status_code,
+                                is_dry_run=False,
+                            )
+                            excluded_key_ids.add(key_res.key_id)
+                            last_error_status = resp.status_code
+                            last_error_message = (
+                                f"Upstream returned HTTP {resp.status_code}: {error_text}"
+                            )
+                            last_key_label = key_res.label
+                            if attempt < 2:
+                                should_retry = True
+                            else:
+                                raise RouterException(
+                                    status_code=resp.status_code,
+                                    error_code=RouterErrorCode.UPSTREAM_ERROR,
+                                    message=last_error_message,
+                                    selected_key_label=key_res.label,
+                                )
 
-            except httpx.RequestError as exc:
-                logger.warning(
-                    f"Upstream network error on key {key_res.key_id} ({key_res.label}): {exc}. "
-                    f"Applying soft cooldown {COOLDOWN_SOFT_ERROR_SECONDS}s and retrying..."
-                )
-                await db.set_cooldown(key_res.key_id, COOLDOWN_SOFT_ERROR_SECONDS)
-                await db.record_usage(
-                    key_id=key_res.key_id,
-                    model_id=key_res.model_id,
-                    action=action,
-                    timestamp=time.time(),
-                    tokens_in=0,
-                    tokens_out=0,
-                    status_code=502,
-                    is_dry_run=False,
-                )
-                excluded_key_ids.add(key_res.key_id)
-                last_error_status = 502
-                last_error_message = f"Network error communicating with upstream: {exc}"
-                last_key_label = key_res.label
-                if attempt < 2:
-                    should_retry = True
-                else:
-                    raise RouterException(
+                        elif resp.status_code == 200:
+                            await db.reset_429_counter(key_res.key_id)
+                            tokens_in = 0
+                            tokens_out = 0
+                            stream_success = False
+                            accumulated_parts: list[str] = []
+                            try:
+                                async for line in resp.aiter_lines():
+                                    yield f"{line}\n"
+                                    if line.startswith("data:"):
+                                        json_str = line[len("data:"):].strip()
+                                        if json_str:
+                                            try:
+                                                chunk = json.loads(json_str)
+                                                if isinstance(chunk, dict):
+                                                    usage = chunk.get("usageMetadata")
+                                                    if isinstance(usage, dict):
+                                                        tokens_in = int(
+                                                            usage.get("promptTokenCount", tokens_in)
+                                                        )
+                                                        tokens_out = int(
+                                                            usage.get("candidatesTokenCount", tokens_out)
+                                                        )
+                                                    candidates = chunk.get("candidates")
+                                                    if isinstance(candidates, list):
+                                                        for cand in candidates:
+                                                            if isinstance(cand, dict):
+                                                                content = cand.get("content")
+                                                                if isinstance(content, dict):
+                                                                    parts = content.get("parts")
+                                                                    if isinstance(parts, list):
+                                                                        for p in parts:
+                                                                            if isinstance(p, dict) and "text" in p and isinstance(p["text"], str):
+                                                                                accumulated_parts.append(p["text"])
+                                                                            elif isinstance(p, str):
+                                                                                accumulated_parts.append(p)
+                                            except (json.JSONDecodeError, ValueError) as exc:
+                                                logger.debug(
+                                                    "Failed to parse SSE line JSON: %s", exc
+                                                )
+                                stream_success = True
+                            finally:
+                                status_code = 200 if stream_success else 500
+                                await db.record_usage(
+                                    key_id=key_res.key_id,
+                                    model_id=key_res.model_id,
+                                    action=action,
+                                    timestamp=time.time(),
+                                    tokens_in=tokens_in,
+                                    tokens_out=tokens_out,
+                                    status_code=status_code,
+                                    is_dry_run=False,
+                                )
+                                if client_key_id is not None:
+                                    await db.record_client_usage(
+                                        client_key_id=client_key_id,
+                                        timestamp=time.time(),
+                                        tokens=tokens_in + tokens_out,
+                                        status_code=status_code,
+                                    )
+                                latency_ms = (time.perf_counter() - start_time) * 1000.0
+                                now_ts = time.time()
+                                now_iso = datetime.now(ZoneInfo(RESET_TIMEZONE)).isoformat()
+                                response_text = "".join(accumulated_parts)
+                                await db.record_request_log(
+                                    timestamp=now_ts,
+                                    timestamp_iso=now_iso,
+                                    client_key_id=client_key_id,
+                                    client_key_name=client_key_name,
+                                    google_key_id=key_res.key_id,
+                                    google_key_label=key_res.label,
+                                    model_id=limit.model_id,
+                                    action=action,
+                                    prompt_text=prompt_text,
+                                    prompt_full_json=prompt_full_json,
+                                    response_text=response_text,
+                                    response_full_json=None,
+                                    tokens_in=tokens_in,
+                                    tokens_out=tokens_out,
+                                    latency_ms=latency_ms,
+                                    status_code=status_code,
+                                    error_message=None if stream_success else "Stream interrupted before completion",
+                                )
+                            return
+
+                        else:
+                            error_text = (await resp.aread()).decode("utf-8", errors="replace")
+                            await db.record_usage(
+                                key_id=key_res.key_id,
+                                model_id=key_res.model_id,
+                                action=action,
+                                timestamp=time.time(),
+                                tokens_in=0,
+                                tokens_out=0,
+                                status_code=resp.status_code,
+                                is_dry_run=False,
+                            )
+                            raise RouterException(
+                                status_code=resp.status_code,
+                                error_code=RouterErrorCode.UPSTREAM_ERROR,
+                                message=f"Upstream returned HTTP {resp.status_code}: {error_text}",
+                                selected_key_label=key_res.label,
+                            )
+
+                except httpx.RequestError as exc:
+                    logger.warning(
+                        f"Upstream network error on key {key_res.key_id} ({key_res.label}): {exc}. "
+                        f"Applying soft cooldown {COOLDOWN_SOFT_ERROR_SECONDS}s and retrying..."
+                    )
+                    await db.set_cooldown(key_res.key_id, COOLDOWN_SOFT_ERROR_SECONDS)
+                    await db.record_usage(
+                        key_id=key_res.key_id,
+                        model_id=key_res.model_id,
+                        action=action,
+                        timestamp=time.time(),
+                        tokens_in=0,
+                        tokens_out=0,
                         status_code=502,
-                        error_code=RouterErrorCode.UPSTREAM_ERROR,
-                        message=last_error_message,
-                        selected_key_label=key_res.label,
-                    ) from exc
-        finally:
-            await decrement_in_flight(key_res.key_id)
+                        is_dry_run=False,
+                    )
+                    excluded_key_ids.add(key_res.key_id)
+                    last_error_status = 502
+                    last_error_message = f"Network error communicating with upstream: {exc}"
+                    last_key_label = key_res.label
+                    if attempt < 2:
+                        should_retry = True
+                    else:
+                        raise RouterException(
+                            status_code=502,
+                            error_code=RouterErrorCode.UPSTREAM_ERROR,
+                            message=last_error_message,
+                            selected_key_label=key_res.label,
+                        ) from exc
+            finally:
+                await decrement_in_flight(key_res.key_id)
 
-        if should_retry:
-            await asyncio.sleep(random.uniform(0.2, 0.5))
+            if should_retry:
+                await asyncio.sleep(random.uniform(0.2, 0.5))
 
-    raise RouterException(
-        status_code=last_error_status,
-        error_code=RouterErrorCode.UPSTREAM_ERROR,
-        message=last_error_message,
-        selected_key_label=last_key_label,
-    )
+        raise RouterException(
+            status_code=last_error_status,
+            error_code=RouterErrorCode.UPSTREAM_ERROR,
+            message=last_error_message,
+            selected_key_label=last_key_label,
+        )
+    except RouterException as exc:
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        now_ts = time.time()
+        now_iso = datetime.now(ZoneInfo(RESET_TIMEZONE)).isoformat()
+        await db.record_request_log(
+            timestamp=now_ts,
+            timestamp_iso=now_iso,
+            client_key_id=client_key_id,
+            client_key_name=client_key_name,
+            google_key_id=last_key_id,
+            google_key_label=exc.selected_key_label or last_key_label,
+            model_id=limit.model_id,
+            action=action,
+            prompt_text=prompt_text,
+            prompt_full_json=prompt_full_json,
+            response_text="",
+            response_full_json=None,
+            tokens_in=0,
+            tokens_out=0,
+            latency_ms=latency_ms,
+            status_code=exc.status_code,
+            error_message=exc.message,
+        )
+        raise
 
 
 async def execute_playground_test(
