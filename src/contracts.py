@@ -6,6 +6,7 @@ Adheres to Pydantic v2, strict type safety, zero Any, and Europe/Moscow timezone
 
 from datetime import datetime, timedelta
 from enum import Enum
+import json
 import secrets
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field
@@ -466,6 +467,7 @@ class RequestLogRecord(BaseModel):
     prompt_full: dict[str, object] | None = None
     response_text: str = ""
     response_full: dict[str, object] | None = None
+    tool_calls: list[dict[str, object]] = Field(default_factory=list, description="Extracted tool calls if any")
     tokens_in: int = 0
     tokens_out: int = 0
     latency_ms: float = 0.0
@@ -481,12 +483,116 @@ class RequestLogListResponse(BaseModel):
     latest_timestamp: float = 0.0
 
 
-def extract_text_from_contents(contents: object) -> str:
-    """Safely extract concatenated user message text from Gemini API contents or payload dict.
+def extract_tool_calls(payload: object) -> list[dict[str, object]]:
+    """Safely extract function/tool calls from Gemini API payload or contents.
 
-    Accepts a list of content dicts (e.g. `[{"parts": [{"text": "..."}, ...], "role": "..."}]`)
-    or a dict (e.g. `{"contents": ...}` or `{"parts": ...}`), and safely extracts combined text.
-    Returns empty string if parsing fails or no text parts are present.
+    Returns a list of dicts: `[{"name": "...", "args": {...}, "id": "...", "thought_signature": "..."}]`.
+    Accepts candidate responses, request contents, part lists, or single part objects.
+    """
+    if payload is None:
+        return []
+
+    calls: list[dict[str, object]] = []
+
+    def _process_part(part_obj: object) -> None:
+        if not isinstance(part_obj, dict):
+            return
+
+        fc_obj: object | None = None
+        if "functionCall" in part_obj:
+            fc_obj = part_obj["functionCall"]
+        elif "function_call" in part_obj:
+            fc_obj = part_obj["function_call"]
+        elif "name" in part_obj and ("args" in part_obj or "arguments" in part_obj):
+            fc_obj = part_obj
+
+        if not isinstance(fc_obj, dict):
+            return
+
+        name = str(fc_obj.get("name") or "")
+
+        raw_args = fc_obj.get("args") if "args" in fc_obj else fc_obj.get("arguments")
+        args_dict: dict[str, object] = {}
+        if isinstance(raw_args, dict):
+            args_dict = dict(raw_args)
+        elif isinstance(raw_args, str):
+            try:
+                parsed: object = json.loads(raw_args)
+                if isinstance(parsed, dict):
+                    args_dict = dict(parsed)
+                else:
+                    args_dict = {"value": parsed}
+            except (json.JSONDecodeError, TypeError, ValueError):
+                args_dict = {"raw": raw_args}
+        elif raw_args is not None:
+            args_dict = {"value": raw_args}
+
+        call_id = ""
+        for key in ("id", "call_id"):
+            val = fc_obj.get(key) or part_obj.get(key)
+            if val is not None and str(val).strip():
+                call_id = str(val).strip()
+                break
+
+        thought_sig = ""
+        for key in ("thought_signature", "thoughtSignature"):
+            val = fc_obj.get(key) or part_obj.get(key)
+            if val is not None and str(val).strip():
+                thought_sig = str(val).strip()
+                break
+
+        calls.append(
+            {
+                "name": name,
+                "args": args_dict,
+                "id": call_id,
+                "thought_signature": thought_sig,
+            }
+        )
+
+    def _traverse(obj: object) -> None:
+        if obj is None:
+            return
+        if isinstance(obj, list):
+            for item in obj:
+                _traverse(item)
+        elif isinstance(obj, dict):
+            if "functionCall" in obj or "function_call" in obj:
+                _process_part(obj)
+            elif "candidates" in obj:
+                _traverse(obj["candidates"])
+            elif "content" in obj:
+                _traverse(obj["content"])
+            elif "contents" in obj:
+                _traverse(obj["contents"])
+            elif "parts" in obj:
+                parts = obj["parts"]
+                if isinstance(parts, list):
+                    for p in parts:
+                        _process_part(p)
+                elif isinstance(parts, dict):
+                    _process_part(parts)
+            elif "name" in obj and ("args" in obj or "arguments" in obj):
+                _process_part(obj)
+
+    _traverse(payload)
+    return calls
+
+
+def extract_text_from_contents(contents: object) -> str:
+    """Safely extract concatenated text, tool calls, and tool responses from Gemini API payload.
+
+    Accepts:
+    - List of content dicts (e.g. `[{"parts": [...], "role": "..."}]`)
+    - Dict with `"contents"` or `"candidates"`
+    - List of candidates (e.g. `[{"content": {"parts": [...]}, "finishReason": "STOP"}]`)
+    - Single content or candidate dict
+    - Single part dict or plain string
+
+    Formats tool calls as: `🛠️ Tool Call: {name}({json_args})`
+    Formats tool responses as: `📦 Tool Response [{name}]: {json_response}`
+    Takes into account `finishMessage` when `finishReason == "STOP"`.
+    Returns empty string if parsing fails or no content is present.
     """
     if contents is None:
         return ""
@@ -501,17 +607,26 @@ def extract_text_from_contents(contents: object) -> str:
             c = contents["contents"]
             if isinstance(c, list):
                 items = c
-            elif isinstance(c, dict):
+            elif isinstance(c, (dict, str)):
                 items = [c]
-            elif isinstance(c, str):
-                return c.strip()
         elif "candidates" in contents:
             cands = contents["candidates"]
             if isinstance(cands, list):
-                for cand in cands:
-                    if isinstance(cand, dict) and "content" in cand:
-                        items.append(cand["content"])
-        elif "parts" in contents or "text" in contents or "role" in contents:
+                items = cands
+            elif isinstance(cands, (dict, str)):
+                items = [cands]
+        elif (
+            "parts" in contents
+            or "content" in contents
+            or "text" in contents
+            or "role" in contents
+            or "functionCall" in contents
+            or "function_call" in contents
+            or "functionResponse" in contents
+            or "function_response" in contents
+            or "finishReason" in contents
+            or "finish_reason" in contents
+        ):
             items = [contents]
         else:
             return ""
@@ -521,26 +636,104 @@ def extract_text_from_contents(contents: object) -> str:
     if not items:
         return ""
 
-    def _extract_parts(item_obj: object) -> list[str]:
+    def _extract_from_part(part_obj: object) -> list[str]:
+        part_texts: list[str] = []
+        if isinstance(part_obj, str) and part_obj.strip():
+            part_texts.append(part_obj.strip())
+            return part_texts
+        if not isinstance(part_obj, dict):
+            return part_texts
+
+        # 1. Text part
+        t = part_obj.get("text")
+        if isinstance(t, str) and t.strip():
+            part_texts.append(t.strip())
+
+        # 2. Tool Call part
+        fc: object | None = None
+        if "functionCall" in part_obj:
+            fc = part_obj["functionCall"]
+        elif "function_call" in part_obj:
+            fc = part_obj["function_call"]
+        elif "name" in part_obj and ("args" in part_obj or "arguments" in part_obj):
+            fc = part_obj
+
+        if isinstance(fc, dict):
+            name = str(fc.get("name") or "")
+            raw_args = fc.get("args") if "args" in fc else fc.get("arguments")
+            if raw_args is None:
+                json_args = "{}"
+            elif isinstance(raw_args, str):
+                json_args = raw_args
+            elif isinstance(raw_args, (dict, list)):
+                json_args = json.dumps(raw_args, ensure_ascii=False)
+            else:
+                json_args = json.dumps(raw_args, ensure_ascii=False)
+            part_texts.append(f"🛠️ Tool Call: {name}({json_args})")
+
+        # 3. Tool Response part
+        fr: object | None = None
+        if "functionResponse" in part_obj:
+            fr = part_obj["functionResponse"]
+        elif "function_response" in part_obj:
+            fr = part_obj["function_response"]
+        elif "name" in part_obj and "response" in part_obj:
+            fr = part_obj
+
+        if isinstance(fr, dict):
+            name = str(fr.get("name") or "")
+            raw_response = fr.get("response")
+            if raw_response is None:
+                json_response = "{}"
+            elif isinstance(raw_response, str):
+                json_response = raw_response
+            elif isinstance(raw_response, (dict, list)):
+                json_response = json.dumps(raw_response, ensure_ascii=False)
+            else:
+                json_response = json.dumps(raw_response, ensure_ascii=False)
+            part_texts.append(f"📦 Tool Response [{name}]: {json_response}")
+
+        return part_texts
+
+    def _extract_from_item(item_obj: object) -> list[str]:
         texts: list[str] = []
         if isinstance(item_obj, str) and item_obj.strip():
             texts.append(item_obj.strip())
-        elif isinstance(item_obj, dict):
-            parts = item_obj.get("parts")
-            if isinstance(parts, list):
-                for p in parts:
-                    if isinstance(p, dict):
-                        t = p.get("text")
-                        if isinstance(t, str) and t.strip():
-                            texts.append(t.strip())
-                    elif isinstance(p, str) and p.strip():
-                        texts.append(p.strip())
-            elif isinstance(parts, str) and parts.strip():
-                texts.append(parts.strip())
-            elif "text" in item_obj:
-                t = item_obj.get("text")
-                if isinstance(t, str) and t.strip():
-                    texts.append(t.strip())
+            return texts
+        if not isinstance(item_obj, dict):
+            return texts
+
+        cand_content = item_obj.get("content")
+        if isinstance(cand_content, dict):
+            texts.extend(_extract_from_item(cand_content))
+        elif isinstance(cand_content, list):
+            for sub in cand_content:
+                texts.extend(_extract_from_item(sub))
+
+        parts = item_obj.get("parts")
+        if isinstance(parts, list):
+            for p in parts:
+                texts.extend(_extract_from_part(p))
+        elif isinstance(parts, (dict, str)):
+            texts.extend(_extract_from_part(parts))
+
+        if (
+            "text" in item_obj
+            or "functionCall" in item_obj
+            or "function_call" in item_obj
+            or "functionResponse" in item_obj
+            or "function_response" in item_obj
+        ):
+            if "parts" not in item_obj and "content" not in item_obj:
+                texts.extend(_extract_from_part(item_obj))
+
+        finish_reason = item_obj.get("finishReason") or item_obj.get("finish_reason")
+        finish_message = item_obj.get("finishMessage") or item_obj.get("finish_message")
+        if finish_reason == "STOP" and isinstance(finish_message, str) and finish_message.strip():
+            fm = finish_message.strip()
+            if fm not in texts:
+                texts.append(fm)
+
         return texts
 
     user_items: list[object] = []
@@ -548,7 +741,10 @@ def extract_text_from_contents(contents: object) -> str:
     for item in items:
         if isinstance(item, dict):
             role = item.get("role")
-            if role is None or str(role).lower() in ("user", ""):
+            if role is None and isinstance(item.get("content"), dict):
+                role = item["content"].get("role")
+
+            if role is None or str(role).lower() in ("user", "function", "tool", ""):
                 user_items.append(item)
             else:
                 other_items.append(item)
@@ -559,7 +755,11 @@ def extract_text_from_contents(contents: object) -> str:
 
     all_texts: list[str] = []
     for item in target_items:
-        all_texts.extend(_extract_parts(item))
+        all_texts.extend(_extract_from_item(item))
+
+    if not all_texts and other_items and target_items is not other_items:
+        for item in other_items:
+            all_texts.extend(_extract_from_item(item))
 
     return "\n".join(all_texts).strip()
 
