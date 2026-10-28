@@ -25,6 +25,7 @@ from src.contracts import (
     ClientKeyUpdateRequest,
     KeyCreateRequest,
     KeyRecord,
+    KeySelectionResult,
     KeyUpdateRequest,
     PlaygroundRequest,
     PlaygroundResponse,
@@ -515,6 +516,7 @@ async def proxy_model_action(
                 media_type="text/event-stream",
             )
 
+    out_selected_key: list[KeySelectionResult] = []
     result = await execute_request(
         model_id=normalized,
         action=action,
@@ -522,6 +524,7 @@ async def proxy_model_action(
         is_dry_run=is_dry,
         headers=dict(request.headers),
         db=db,
+        out_selected_key=out_selected_key,
         wait_timeout=effective_wait_timeout,
         client_key_id=client_key_id,
         client_key_name=client_key_name,
@@ -539,7 +542,10 @@ async def proxy_model_action(
             tokens=tokens,
             status_code=200,
         )
-    return JSONResponse(status_code=200, content=result)
+    resp_headers: dict[str, str] = {}
+    if out_selected_key:
+        resp_headers["X-Selected-Key-Label"] = out_selected_key[0].label
+    return JSONResponse(status_code=200, content=result, headers=resp_headers)
 
 
 @app.get("/api/logs", response_model=RequestLogListResponse)
@@ -584,6 +590,22 @@ async def list_request_logs(
             except (json.JSONDecodeError, ValueError) as exc:
                 logger.debug("Failed to decode response_full_json: %s", exc)
 
+        tool_calls_list: list[dict[str, object]] = []
+        raw_tc = r.get("tool_calls")
+        if isinstance(raw_tc, list):
+            for tc in raw_tc:
+                if isinstance(tc, dict):
+                    tool_calls_list.append(tc)
+        elif r.get("tool_calls_json") and isinstance(r.get("tool_calls_json"), str):
+            try:
+                parsed_tc = json.loads(str(r["tool_calls_json"]))
+                if isinstance(parsed_tc, list):
+                    for tc in parsed_tc:
+                        if isinstance(tc, dict):
+                            tool_calls_list.append(tc)
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.debug("Failed to decode tool_calls_json in main: %s", exc)
+
         records.append(
             RequestLogRecord(
                 id=int(r["id"]),
@@ -599,6 +621,7 @@ async def list_request_logs(
                 prompt_full=prompt_full,
                 response_text=str(r["response_text"]) if r.get("response_text") is not None else "",
                 response_full=response_full,
+                tool_calls=tool_calls_list,
                 tokens_in=int(r["tokens_in"]),
                 tokens_out=int(r["tokens_out"]),
                 latency_ms=float(r["latency_ms"]),

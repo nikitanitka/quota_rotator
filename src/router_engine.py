@@ -38,6 +38,7 @@ from src.contracts import (
     calculate_next_reset_time,
     calculate_seconds_until_reset,
     extract_text_from_contents,
+    extract_tool_calls,
     mask_api_key,
     mask_client_api_key,
 )
@@ -57,6 +58,161 @@ _shared_client: httpx.AsyncClient | None = None
 
 _in_flight_lock: asyncio.Lock = asyncio.Lock()
 _in_flight_requests: dict[int, int] = {}
+
+_thought_signature_lock: asyncio.Lock = asyncio.Lock()
+_thought_signature_cache: dict[tuple[str, str], str] = {}
+_thought_signature_by_name: dict[str, str] = {}
+THOUGHT_SIGNATURE_CACHE_LIMIT: int = 500
+
+
+async def clear_thought_signature_cache() -> None:
+    """Clear thought signature caches."""
+    async with _thought_signature_lock:
+        _thought_signature_cache.clear()
+        _thought_signature_by_name.clear()
+
+
+async def cache_thought_signatures(response_payload: object) -> None:
+    """Extract all functionCall parts from Gemini response and cache their thought signatures.
+
+    Caches both by exact key (func_name, json.dumps(args, sort_keys=True)) and by func_name.
+    Keeps size limited to 500 entries per LRU policy.
+    """
+    if response_payload is None:
+        return
+
+    payload_obj = response_payload
+    if isinstance(payload_obj, str):
+        cleaned = payload_obj.strip()
+        if cleaned.startswith("data:"):
+            cleaned = cleaned[5:].strip()
+        try:
+            payload_obj = json.loads(cleaned)
+        except (json.JSONDecodeError, ValueError):
+            return
+
+    calls = extract_tool_calls(payload_obj)
+    if not calls:
+        return
+
+    async with _thought_signature_lock:
+        for call in calls:
+            sig = str(call.get("thought_signature") or "").strip()
+            if not sig:
+                continue
+
+            func_name = str(call.get("name") or "").strip()
+            if not func_name:
+                continue
+
+            raw_args = call.get("args")
+            args_dict: dict[str, object] = {}
+            if isinstance(raw_args, dict):
+                args_dict = dict(raw_args)
+            elif isinstance(raw_args, str):
+                try:
+                    p = json.loads(raw_args)
+                    if isinstance(p, dict):
+                        args_dict = p
+                except (json.JSONDecodeError, ValueError) as exc:
+                    logger.debug("Failed to decode functionCall raw args in cache: %s", exc)
+
+            exact_key = (func_name, json.dumps(args_dict, sort_keys=True))
+
+            # Maintain LRU for _thought_signature_cache
+            _thought_signature_cache.pop(exact_key, None)
+            _thought_signature_cache[exact_key] = sig
+            while len(_thought_signature_cache) > THOUGHT_SIGNATURE_CACHE_LIMIT:
+                _thought_signature_cache.pop(next(iter(_thought_signature_cache)))
+
+            # Maintain LRU for _thought_signature_by_name
+            _thought_signature_by_name.pop(func_name, None)
+            _thought_signature_by_name[func_name] = sig
+            while len(_thought_signature_by_name) > THOUGHT_SIGNATURE_CACHE_LIMIT:
+                _thought_signature_by_name.pop(next(iter(_thought_signature_by_name)))
+
+
+async def restore_missing_thought_signatures(body: dict[str, object] | None) -> bool:
+    """Traverse body['contents'] and restore missing thought_signature on functionCall parts.
+
+    Searches cache first by exact (func_name, json.dumps(args, sort_keys=True)), then by func_name.
+    If found, injects part['thought_signature'] = sig and returns True if at least one was restored.
+    """
+    if not body or not isinstance(body, dict):
+        return False
+
+    contents = body.get("contents")
+    if not contents:
+        return False
+
+    def _collect_parts(item: object) -> list[dict[str, object]]:
+        parts_list: list[dict[str, object]] = []
+        if isinstance(item, list):
+            for elem in item:
+                parts_list.extend(_collect_parts(elem))
+        elif isinstance(item, dict):
+            if "parts" in item and isinstance(item["parts"], list):
+                for p in item["parts"]:
+                    if isinstance(p, dict):
+                        parts_list.append(p)
+            for k, v in item.items():
+                if k != "parts" and isinstance(v, (dict, list)):
+                    parts_list.extend(_collect_parts(v))
+        return parts_list
+
+    parts = _collect_parts(contents)
+    if not parts:
+        return False
+
+    restored = False
+    async with _thought_signature_lock:
+        for part in parts:
+            fc_obj: object | None = None
+            if "functionCall" in part:
+                fc_obj = part["functionCall"]
+            elif "function_call" in part:
+                fc_obj = part["function_call"]
+
+            if not isinstance(fc_obj, dict):
+                continue
+
+            has_sig = False
+            for k in ("thought_signature", "thoughtSignature"):
+                v_part = part.get(k)
+                if v_part is not None and str(v_part).strip():
+                    has_sig = True
+                    break
+                v_fc = fc_obj.get(k)
+                if v_fc is not None and str(v_fc).strip():
+                    has_sig = True
+                    break
+
+            if has_sig:
+                continue
+
+            func_name = str(fc_obj.get("name") or "").strip()
+            if not func_name:
+                continue
+
+            raw_args = fc_obj.get("args") if "args" in fc_obj else fc_obj.get("arguments")
+            args_dict: dict[str, object] = {}
+            if isinstance(raw_args, dict):
+                args_dict = dict(raw_args)
+            elif isinstance(raw_args, str):
+                try:
+                    p = json.loads(raw_args)
+                    if isinstance(p, dict):
+                        args_dict = p
+                except (json.JSONDecodeError, ValueError) as exc:
+                    logger.debug("Failed to decode functionCall raw args in restore: %s", exc)
+
+            exact_key = (func_name, json.dumps(args_dict, sort_keys=True))
+            sig = _thought_signature_cache.get(exact_key) or _thought_signature_by_name.get(func_name)
+            if sig:
+                part["thought_signature"] = sig
+                restored = True
+
+    return restored
 
 
 async def get_http_client() -> httpx.AsyncClient:
@@ -418,6 +574,9 @@ async def execute_request(
     start_time = time.perf_counter()
     limit = get_model_limit(model_id)
 
+    if body and isinstance(body, dict):
+        await restore_missing_thought_signatures(body)
+
     prompt_text = ""
     if body:
         prompt_text = extract_text_from_contents(body.get("contents") if isinstance(body, dict) else None)
@@ -540,6 +699,7 @@ async def execute_request(
                 }
 
                 try:
+                    await restore_missing_thought_signatures(body)
                     resp = await client.post(
                         upstream_url,
                         json=body or {},
@@ -618,6 +778,8 @@ async def execute_request(
                 if resp.status_code == 200:
                     await db.reset_429_counter(key_res.key_id)
                     data = resp.json()
+                    await cache_thought_signatures(data)
+                    tool_calls = extract_tool_calls(data)
                     usage_meta = (
                         data.get("usageMetadata", {}) if isinstance(data, dict) else {}
                     )
@@ -679,6 +841,7 @@ async def execute_request(
                         prompt_full_json=prompt_full_json,
                         response_text=response_text,
                         response_full_json=json.dumps(data) if data is not None else None,
+                        tool_calls=tool_calls,
                         tokens_in=tokens_in,
                         tokens_out=tokens_out,
                         latency_ms=latency_ms,
@@ -786,6 +949,9 @@ async def execute_streaming_request(
     start_time = time.perf_counter()
     limit = get_model_limit(model_id)
 
+    if body and isinstance(body, dict):
+        await restore_missing_thought_signatures(body)
+
     prompt_text = ""
     if body:
         prompt_text = extract_text_from_contents(body.get("contents") if isinstance(body, dict) else None)
@@ -839,6 +1005,7 @@ async def execute_streaming_request(
             should_retry = False
             try:
                 try:
+                    await restore_missing_thought_signatures(body)
                     stream_ctx = client.stream(
                         "POST",
                         upstream_url,
@@ -923,6 +1090,7 @@ async def execute_streaming_request(
                             tokens_out = 0
                             stream_success = False
                             accumulated_parts: list[str] = []
+                            stream_tool_calls: list[dict[str, object]] = []
                             try:
                                 async for line in resp.aiter_lines():
                                     yield f"{line}\n"
@@ -932,6 +1100,10 @@ async def execute_streaming_request(
                                             try:
                                                 chunk = json.loads(json_str)
                                                 if isinstance(chunk, dict):
+                                                    await cache_thought_signatures(chunk)
+                                                    chunk_tools = extract_tool_calls(chunk)
+                                                    if chunk_tools:
+                                                        stream_tool_calls.extend(chunk_tools)
                                                     usage = chunk.get("usageMetadata")
                                                     if isinstance(usage, dict):
                                                         tokens_in = int(
@@ -994,6 +1166,7 @@ async def execute_streaming_request(
                                     prompt_full_json=prompt_full_json,
                                     response_text=response_text,
                                     response_full_json=None,
+                                    tool_calls=stream_tool_calls,
                                     tokens_in=tokens_in,
                                     tokens_out=tokens_out,
                                     latency_ms=latency_ms,

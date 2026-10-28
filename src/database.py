@@ -6,11 +6,14 @@ Provides thread-safe, asynchronous CRUD for API keys and usage events logging.
 import asyncio
 from datetime import datetime, timezone
 import json
+import logging
 from pathlib import Path
 import sqlite3
 import time
 from zoneinfo import ZoneInfo
 from src.contracts import INITIAL_PRELOADED_KEYS, RESET_TIMEZONE, mask_client_api_key
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
@@ -124,6 +127,7 @@ class DatabaseManager:
                 prompt_full_json TEXT,
                 response_text TEXT NOT NULL DEFAULT '',
                 response_full_json TEXT,
+                tool_calls_json TEXT,
                 tokens_in INTEGER NOT NULL DEFAULT 0,
                 tokens_out INTEGER NOT NULL DEFAULT 0,
                 latency_ms REAL NOT NULL DEFAULT 0.0,
@@ -134,6 +138,11 @@ class DatabaseManager:
             );
             """
         )
+        try:
+            cursor.execute("ALTER TABLE request_logs ADD COLUMN tool_calls_json TEXT;")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                logger.debug("Column tool_calls_json migration note: %s", exc)
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_request_logs_time ON request_logs(timestamp DESC);"
         )
@@ -586,6 +595,7 @@ class DatabaseManager:
         prompt_full_json: str | dict[str, object] | None = None,
         response_text: str = "",
         response_full_json: str | dict[str, object] | None = None,
+        tool_calls: list[dict[str, object]] | None = None,
         tokens_in: int = 0,
         tokens_out: int = 0,
         latency_ms: float = 0.0,
@@ -604,6 +614,10 @@ class DatabaseManager:
         elif isinstance(response_full_json, str):
             r_json_str = response_full_json
 
+        t_json_str: str | None = None
+        if tool_calls is not None:
+            t_json_str = json.dumps(tool_calls)
+
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -612,8 +626,8 @@ class DatabaseManager:
                 timestamp, timestamp_iso, client_key_id, client_key_name,
                 google_key_id, google_key_label, model_id, action,
                 prompt_text, prompt_full_json, response_text, response_full_json,
-                tokens_in, tokens_out, latency_ms, status_code, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                tool_calls_json, tokens_in, tokens_out, latency_ms, status_code, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 timestamp,
@@ -628,6 +642,7 @@ class DatabaseManager:
                 p_json_str,
                 response_text,
                 r_json_str,
+                t_json_str,
                 tokens_in,
                 tokens_out,
                 latency_ms,
@@ -710,6 +725,20 @@ class DatabaseManager:
 
         records: list[dict[str, object]] = []
         for row in rows:
+            tool_calls_list: list[dict[str, object]] = []
+            raw_tc = None
+            if "tool_calls_json" in row.keys():
+                raw_tc = row["tool_calls_json"]
+            if raw_tc and isinstance(raw_tc, str):
+                try:
+                    parsed_tc = json.loads(raw_tc)
+                    if isinstance(parsed_tc, list):
+                        for tc in parsed_tc:
+                            if isinstance(tc, dict):
+                                tool_calls_list.append(tc)
+                except (json.JSONDecodeError, ValueError) as exc:
+                    logger.debug("Failed to decode tool_calls_json: %s", exc)
+
             records.append(
                 {
                     "id": int(row["id"]),
@@ -725,6 +754,8 @@ class DatabaseManager:
                     "prompt_full_json": str(row["prompt_full_json"]) if row["prompt_full_json"] is not None else None,
                     "response_text": str(row["response_text"]) if row["response_text"] is not None else "",
                     "response_full_json": str(row["response_full_json"]) if row["response_full_json"] is not None else None,
+                    "tool_calls_json": str(raw_tc) if raw_tc is not None else None,
+                    "tool_calls": tool_calls_list,
                     "tokens_in": int(row["tokens_in"]),
                     "tokens_out": int(row["tokens_out"]),
                     "latency_ms": float(row["latency_ms"]),
@@ -912,6 +943,7 @@ class DatabaseManager:
         prompt_full_json: str | dict[str, object] | None = None,
         response_text: str = "",
         response_full_json: str | dict[str, object] | None = None,
+        tool_calls: list[dict[str, object]] | None = None,
         tokens_in: int = 0,
         tokens_out: int = 0,
         latency_ms: float = 0.0,
@@ -933,6 +965,7 @@ class DatabaseManager:
                 prompt_full_json=prompt_full_json,
                 response_text=response_text,
                 response_full_json=response_full_json,
+                tool_calls=tool_calls,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 latency_ms=latency_ms,
@@ -1152,6 +1185,7 @@ async def record_request_log(
     prompt_full_json: str | dict[str, object] | None = None,
     response_text: str = "",
     response_full_json: str | dict[str, object] | None = None,
+    tool_calls: list[dict[str, object]] | None = None,
     tokens_in: int = 0,
     tokens_out: int = 0,
     latency_ms: float = 0.0,
@@ -1172,6 +1206,7 @@ async def record_request_log(
         prompt_full_json=prompt_full_json,
         response_text=response_text,
         response_full_json=response_full_json,
+        tool_calls=tool_calls,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         latency_ms=latency_ms,

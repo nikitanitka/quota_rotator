@@ -12,6 +12,7 @@ Tests:
 9. Upstream 429 transparent retry.
 """
 
+import asyncio
 from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +39,8 @@ from src.main import app
 from src.router_engine import (
     UPSTREAM_MODEL_ALIASES,
     RouterException,
+    cache_thought_signatures,
+    clear_thought_signature_cache,
     close_http_client,
     decrement_in_flight,
     execute_playground_test,
@@ -49,6 +52,7 @@ from src.router_engine import (
     get_seconds_until_next_msk_reset,
     increment_in_flight,
     reset_in_flight_requests,
+    restore_missing_thought_signatures,
     select_best_key,
     select_best_key_with_wait,
 )
@@ -1586,6 +1590,262 @@ async def test_request_logs_api_endpoints(
     assert empty_logs.status_code == 200
     assert empty_logs.json()["total_count"] == 0
     assert empty_logs.json()["logs"] == []
+
+
+@pytest.mark.asyncio
+async def test_thought_signature_caching_and_restoration() -> None:
+    """Verify caching of thought_signature and automatic restoration in requests."""
+    await clear_thought_signature_cache()
+
+    # 1. Cache signature from Gemini response payload
+    gemini_response = {
+        "candidates": [
+            {
+                "content": {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "functionCall": {
+                                "name": "get_weather",
+                                "args": {"city": "Tokyo", "units": "metric"},
+                            },
+                            "thought_signature": "sig_tokyo_metric_12345",
+                        },
+                        {
+                            "functionCall": {
+                                "name": "calculate_tax",
+                                "args": {"amount": 100},
+                            },
+                            "thoughtSignature": "sig_tax_calc_67890",
+                        },
+                    ],
+                },
+                "finishReason": "STOP",
+            }
+        ]
+    }
+    await cache_thought_signatures(gemini_response)
+
+    # 2. Request body missing thought_signature (exact match)
+    request_body_exact: dict[str, object] = {
+        "contents": [
+            {
+                "role": "model",
+                "parts": [
+                    {
+                        "functionCall": {
+                            "name": "get_weather",
+                            "args": {"city": "Tokyo", "units": "metric"},
+                        }
+                    }
+                ],
+            }
+        ]
+    }
+
+    contents_list = request_body_exact.get("contents")
+    assert isinstance(contents_list, list) and len(contents_list) > 0
+    first_item = contents_list[0]
+    assert isinstance(first_item, dict)
+    parts_list = first_item.get("parts")
+    assert isinstance(parts_list, list) and len(parts_list) > 0
+    part_ref = parts_list[0]
+    assert isinstance(part_ref, dict)
+    assert "thought_signature" not in part_ref
+
+    restored = await restore_missing_thought_signatures(request_body_exact)
+    assert restored is True
+    assert part_ref["thought_signature"] == "sig_tokyo_metric_12345"
+
+    # Restoring again should return False (already has signature)
+    assert await restore_missing_thought_signatures(request_body_exact) is False
+
+    # 3. Request body with different args (fallback to func_name match)
+    request_body_fallback: dict[str, object] = {
+        "contents": [
+            {
+                "role": "model",
+                "parts": [
+                    {
+                        "functionCall": {
+                            "name": "calculate_tax",
+                            "args": {"amount": 250},
+                        }
+                    }
+                ],
+            }
+        ]
+    }
+    fb_contents = request_body_fallback.get("contents")
+    assert isinstance(fb_contents, list) and len(fb_contents) > 0
+    fb_first = fb_contents[0]
+    assert isinstance(fb_first, dict)
+    fb_parts = fb_first.get("parts")
+    assert isinstance(fb_parts, list) and len(fb_parts) > 0
+    fb_part = fb_parts[0]
+    assert isinstance(fb_part, dict)
+    restored_fb = await restore_missing_thought_signatures(request_body_fallback)
+    assert restored_fb is True
+    assert fb_part["thought_signature"] == "sig_tax_calc_67890"
+
+    # 4. Unknown function returns False
+    unknown_req: dict[str, object] = {
+        "contents": [
+            {
+                "role": "model",
+                "parts": [
+                    {
+                        "functionCall": {
+                            "name": "unknown_tool",
+                            "args": {},
+                        }
+                    }
+                ],
+            }
+        ]
+    }
+    assert await restore_missing_thought_signatures(unknown_req) is False
+
+    # 5. Empty or None body
+    assert await restore_missing_thought_signatures(None) is False
+    assert await restore_missing_thought_signatures({}) is False
+
+    await clear_thought_signature_cache()
+
+
+@pytest.mark.asyncio
+async def test_record_request_log_with_tool_calls(
+    test_db: DatabaseManager, async_client: httpx.AsyncClient
+) -> None:
+    """Verify tool_calls storage and extraction in database and API responses."""
+    tool_calls = [
+        {
+            "name": "search_db",
+            "args": {"query": "SELECT 1", "limit": 10},
+            "id": "call_abc_123",
+            "thought_signature": "sig_search_db_777",
+        },
+        {
+            "name": "send_alert",
+            "args": {"channel": "ops", "severity": "high"},
+            "id": "call_alert_456",
+            "thought_signature": "sig_alert_888",
+        },
+    ]
+
+    log_id = await test_db.record_request_log(
+        timestamp=time.time(),
+        timestamp_iso=datetime.now(ZoneInfo(RESET_TIMEZONE)).isoformat(),
+        model_id="gemini-3.1-flash-lite",
+        action="generateContent",
+        prompt_text="Execute operations with tools",
+        tool_calls=tool_calls,
+        tokens_in=50,
+        tokens_out=120,
+        status_code=200,
+    )
+    assert log_id > 0
+
+    # 1. Verify direct DB extraction
+    records, total_count, _ = await test_db.get_request_logs(limit=10)
+    assert total_count >= 1
+    found = next((r for r in records if r["id"] == log_id), None)
+    assert found is not None
+    assert found["tool_calls"] == tool_calls
+    assert found["tool_calls_json"] is not None
+
+    # 2. Verify /api/logs endpoint response
+    api_resp = await async_client.get("/api/logs")
+    assert api_resp.status_code == 200
+    resp_data = api_resp.json()
+    assert resp_data["total_count"] >= 1
+    log_rec = next((l for l in resp_data["logs"] if l["id"] == log_id), None)
+    assert log_rec is not None
+    assert log_rec["tool_calls"] == tool_calls
+    assert len(log_rec["tool_calls"]) == 2
+    assert log_rec["tool_calls"][0]["name"] == "search_db"
+    assert log_rec["tool_calls"][0]["thought_signature"] == "sig_search_db_777"
+
+
+@pytest.mark.asyncio
+async def test_stress_test_13_keys_pool(
+    test_db: DatabaseManager, async_client: httpx.AsyncClient
+) -> None:
+    """Verify stress test execution across a pool of 13 keys."""
+    from tests.stress_test_13_keys import (
+        calculate_percentile,
+        print_report,
+        send_single_request,
+    )
+
+    # 1. Seed pool up to 13 keys with realistic labels
+    extra_labels = [
+        "Mama",
+        "Nikitaloskutov",
+        "artem1",
+        "artem2",
+        "artem3",
+        "artem4",
+        "artem5",
+        "Key-Gamma-3",
+        "Key-Delta-4",
+        "Key-Epsilon-5",
+        "Key-Zeta-6",
+    ]
+    for idx, lbl in enumerate(extra_labels, start=3):
+        await test_db.add_key(key_value=f"AQ.Ab8RN6MockKey_{idx:03d}_{lbl}", label=lbl)
+
+    all_keys = await test_db.get_all_keys()
+    assert len(all_keys) == 13
+
+    # 2. Run 50 concurrent requests
+    total_requests = 50
+    concurrency = 10
+    semaphore = asyncio.Semaphore(concurrency)
+    payload: dict[str, object] = {
+        "contents": [{"parts": [{"text": "Testing 13 keys distribution"}]}],
+        "dry_run": True,
+    }
+
+    start_wall = time.perf_counter()
+    tasks = [
+        asyncio.create_task(
+            send_single_request(
+                client=async_client,
+                semaphore=semaphore,
+                url="/v1beta/models/gemini-3.1-flash-lite:generateContent?dry_run=true",
+                headers={"Content-Type": "application/json"},
+                payload=payload,
+            )
+        )
+        for _ in range(total_requests)
+    ]
+    metrics = await asyncio.gather(*tasks)
+    elapsed_total = time.perf_counter() - start_wall
+
+    assert len(metrics) == 50
+    successes = [m for m in metrics if m.success]
+    assert len(successes) == 50
+
+    # Key distribution
+    key_labels_used = {m.key_label for m in metrics}
+    # All 13 keys should be utilized under least-loaded rotation
+    assert len(key_labels_used) >= 10
+
+    # Percentiles
+    latencies = [m.latency_ms for m in metrics]
+    p50 = calculate_percentile(latencies, 50.0)
+    p95 = calculate_percentile(latencies, 95.0)
+    assert p50 > 0.0
+    assert p95 >= p50
+
+    # Verify report prints properly without error
+    print_report(
+        total_requests=total_requests,
+        concurrency=concurrency,
+        elapsed_total_sec=elapsed_total,
+        metrics=list(metrics),
+    )
 
 
 

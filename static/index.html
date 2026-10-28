@@ -64,62 +64,78 @@
 
   <!-- Header Section -->
   <header class="sticky top-0 z-40 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 transition-colors">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
-      
-      <!-- Logo & System Identity -->
-      <div class="flex items-center gap-3.5">
-        <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 p-0.5 shadow-lg shadow-indigo-500/20 flex items-center justify-center flex-shrink-0">
-          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-            <svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="h-20 flex items-center justify-between gap-4">
+        
+        <!-- Logo & System Identity -->
+        <div class="flex items-center gap-3.5">
+          <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 p-0.5 shadow-lg shadow-indigo-500/20 flex items-center justify-center flex-shrink-0">
+            <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+              <svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+            </div>
+          </div>
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <h1 class="text-base sm:text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                Gemini Key Pool Router & Quota Control
+              </h1>
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                v2.0
+              </span>
+              <span id="connectionPill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="connectionText">POLL ACTIVE</span>
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 font-medium">Multi-key failover, sliding-window RPM/TPM guard & daily RPD scheduler</p>
+          </div>
+        </div>
+
+        <!-- Live Countdown & Manual Refresh -->
+        <div class="flex items-center gap-2.5 sm:gap-3 flex-shrink-0">
+          <!-- Live Countdown Badge -->
+          <div class="bg-slate-900/90 border border-slate-700/70 rounded-xl px-3 sm:px-4 py-2 shadow-inner flex items-center gap-2.5" title="Daily RPD reset scheduled strictly at 10:00:00 Europe/Moscow">
+            <div class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping opacity-80 flex-shrink-0"></div>
+            <div class="flex items-center gap-1.5">
+              <span id="resetCountdown" class="font-mono text-amber-400 font-bold text-xs sm:text-sm md:text-base tracking-wide whitespace-nowrap">
+                00:00:00 до сброса в 10:00 МСК
+              </span>
+            </div>
+          </div>
+
+          <!-- Sound Alert Toggle Button -->
+          <button id="soundAlertBtn" onclick="toggleSoundAlerts()" class="bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 border border-slate-700/80 px-3 py-2 rounded-xl transition duration-150 flex items-center gap-2 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40" title="Toggle Jury Alarm Sound">
+            <span id="soundIconWrapper">
+              <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+              </svg>
+            </span>
+            <span id="soundAlertText" class="hidden sm:inline">Sound: ON</span>
+          </button>
+
+          <!-- Manual Refresh Button -->
+          <button id="refreshBtn" onclick="refreshDashboard(true)" class="bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 border border-slate-700/80 px-3 py-2 rounded-xl transition duration-150 flex items-center gap-2 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40" title="Synchronize Pool Status">
+            <svg id="refreshIcon" class="w-4 h-4 text-slate-400 transition-transform duration-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
             </svg>
-          </div>
+            <span class="hidden md:inline">Refresh</span>
+          </button>
         </div>
-        <div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="text-base sm:text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              Gemini Key Pool Router & Quota Control
-            </h1>
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
-              v2.0
-            </span>
-            <span id="connectionPill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span id="connectionText">POLL ACTIVE</span>
-            </span>
-          </div>
-          <p class="text-xs text-slate-400 font-medium">Multi-key failover, sliding-window RPM/TPM guard & daily RPD scheduler</p>
-        </div>
+
       </div>
 
-      <!-- Live Countdown & Manual Refresh -->
-      <div class="flex items-center gap-2.5 sm:gap-3 flex-shrink-0">
-        <!-- Live Countdown Badge -->
-        <div class="bg-slate-900/90 border border-slate-700/70 rounded-xl px-3 sm:px-4 py-2 shadow-inner flex items-center gap-2.5" title="Daily RPD reset scheduled strictly at 10:00:00 Europe/Moscow">
-          <div class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping opacity-80 flex-shrink-0"></div>
-          <div class="flex items-center gap-1.5">
-            <span id="resetCountdown" class="font-mono text-amber-400 font-bold text-xs sm:text-sm md:text-base tracking-wide whitespace-nowrap">
-              00:00:00 до сброса в 10:00 МСК
-            </span>
-          </div>
-        </div>
-
-        <!-- Sound Alert Toggle Button -->
-        <button id="soundAlertBtn" onclick="toggleSoundAlerts()" class="bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 border border-slate-700/80 px-3 py-2 rounded-xl transition duration-150 flex items-center gap-2 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40" title="Toggle Jury Alarm Sound">
-          <span id="soundIconWrapper">
-            <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-            </svg>
-          </span>
-          <span id="soundAlertText" class="hidden sm:inline">Sound: ON</span>
+      <!-- Tab Navigation Bar -->
+      <div class="flex items-center gap-2 pb-3 border-t border-slate-800/60 pt-2.5 overflow-x-auto" role="tablist" aria-label="Dashboard Navigation Tabs">
+        <button id="tabBtnDashboard" onclick="switchTab('dashboard')" role="tab" aria-selected="true" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 bg-indigo-600 text-white shadow focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h10M7 12h10M7 17h10"/></svg>
+          <span>📊 Dashboard &amp; Pool</span>
         </button>
-
-        <!-- Manual Refresh Button -->
-        <button id="refreshBtn" onclick="refreshDashboard(true)" class="bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 border border-slate-700/80 px-3 py-2 rounded-xl transition duration-150 flex items-center gap-2 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40" title="Synchronize Pool Status">
-          <svg id="refreshIcon" class="w-4 h-4 text-slate-400 transition-transform duration-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-          </svg>
-          <span class="hidden md:inline">Refresh</span>
+        <button id="tabBtnInspector" onclick="switchTab('inspector')" role="tab" aria-selected="false" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 text-slate-400 hover:text-white hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/><circle cx="12" cy="12" r="4"/></svg>
+          <span>🔍 Live Request &amp; Tool Inspector</span>
+          <span id="inspectorNewBadge" class="hidden ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-500 text-white font-bold">New</span>
         </button>
       </div>
 
@@ -127,33 +143,10 @@
   </header>
 
   <!-- Main Dashboard Container -->
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8 z-10">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full z-10">
 
-    <!-- Jury Radar Live Banner -->
-    <section id="juryRadarSection" class="transition-all duration-300" aria-label="Jury Radar Live Monitor Banner">
-      <div id="juryRadarBanner" class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-lg backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-300">
-        <div class="flex items-center gap-3 w-full sm:w-auto">
-          <div id="radarIndicatorDot" class="w-3.5 h-3.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-500/50 flex-shrink-0"></div>
-          <div class="min-w-0">
-            <div id="radarBannerTitle" class="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
-              <span>🟢 Jury Radar: Monitoring active</span>
-              <span class="text-xs text-slate-400 font-normal hidden sm:inline">(waiting for requests)</span>
-            </div>
-            <p id="radarBannerSubtitle" class="text-xs text-slate-400 truncate">Real-time prompt &amp; model response monitoring with repeating audio alarm</p>
-          </div>
-        </div>
-        <div class="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-          <button id="radarMuteBtn" onclick="muteAlarm()" class="hidden px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm active:scale-95 animate-bounce" title="Mute active repeating alarm">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
-            <span>🔇 Mute Alarm</span>
-          </button>
-          <button onclick="scrollToInspector()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md shadow-indigo-600/30 flex items-center gap-1.5 active:scale-95">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-            <span>Jump to Inspector</span>
-          </button>
-        </div>
-      </div>
-    </section>
+    <!-- Tab 1: 📊 Dashboard & Pool -->
+    <div id="tabDashboard" class="space-y-8 transition-opacity duration-200">
 
     <!-- Hero Stats Grid -->
     <section aria-label="Hero Stats Summary">
@@ -479,101 +472,6 @@
       </div>
     </section>
 
-    <!-- Live Request Inspector & Jury Monitor Section -->
-    <section id="liveRequestInspector" class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-sm space-y-5" aria-label="Live Request Inspector & Jury Monitor">
-      <!-- Section Header -->
-      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
-        <div>
-          <div class="flex items-center gap-2.5">
-            <div class="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/><circle cx="12" cy="12" r="4"/>
-              </svg>
-            </div>
-            <div>
-              <div class="flex items-center gap-2">
-                <h2 class="text-lg font-bold text-white tracking-tight">Live Request Inspector &amp; Jury Monitor</h2>
-                <span id="inspectorStatusPill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono">
-                  <span id="inspectorStatusDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span id="inspectorStatusText">LIVE (2s)</span>
-                </span>
-              </div>
-              <p class="text-xs text-slate-400 mt-0.5">Real-time inspection of prompts, messages, and model responses for jury evaluation</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Metric counter -->
-        <div class="flex items-center gap-2 text-xs">
-          <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl font-mono text-slate-300">
-            <span class="text-slate-500 text-[11px] font-sans">Total Logs:</span>
-            <span id="logsTotalCount" class="font-bold text-white ml-1">0</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Control & Filter Toolbar -->
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
-        <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1">
-          <!-- Client Filter Dropdown -->
-          <div class="flex items-center gap-2">
-            <label for="logClientFilter" class="text-xs font-semibold text-slate-300 whitespace-nowrap">Filter by Client:</label>
-            <div class="relative min-w-[170px] sm:w-52">
-              <select id="logClientFilter" onchange="onLogClientFilterChange(this.value)" class="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none cursor-pointer pr-8 font-medium">
-                <option value="">All Clients</option>
-              </select>
-              <div class="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-slate-400">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-              </div>
-            </div>
-          </div>
-
-          <!-- Live Search Input -->
-          <div class="relative flex-1">
-            <input type="text" id="logSearchInput" oninput="onLogSearchInput(this.value)" placeholder="Search in prompt, response, model, or label..." class="w-full bg-slate-900 border border-slate-800 text-white rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-slate-500">
-            <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          </div>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-          <!-- Toggle Polling -->
-          <button id="togglePollingBtn" onclick="toggleInspectorPolling()" class="bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Pause or resume live polling">
-            <span id="pollingIconIndicator" class="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span id="pollingBtnText">Live Polling (2s)</span>
-          </button>
-
-          <!-- Test Sound -->
-          <button onclick="playAlarmChime(true)" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Test Jury Alarm Sound">
-            <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-            <span>Test Sound</span>
-          </button>
-
-          <!-- Clear Logs -->
-          <button onclick="openClearLogsConfirmModal()" class="bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Clear all stored logs">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            <span>Clear Logs</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Logs Card Feed Container -->
-      <div id="requestLogsList" class="space-y-4">
-        <!-- Dynamically rendered logs or empty state -->
-        <div class="py-14 text-center bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 flex flex-col items-center justify-center">
-          <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-3 border border-indigo-500/20">
-            <svg class="w-6 h-6 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/>
-            </svg>
-          </div>
-          <h4 class="text-sm font-semibold text-white">Waiting for incoming requests from jury...</h4>
-          <p class="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed">
-            New prompts, model responses, and inspection payloads will appear here in real time.
-          </p>
-        </div>
-      </div>
-    </section>
-
     <!-- Interactive Routing & Playground Section -->
     <section class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-sm">
       <div class="border-b border-slate-800 pb-4 mb-6">
@@ -714,6 +612,143 @@
 
       </div>
     </section>
+
+    </div><!-- End Tab 1: tabDashboard -->
+
+    <!-- Tab 2: 🔍 Live Request & Tool Inspector -->
+    <div id="tabInspector" class="hidden space-y-6 transition-opacity duration-200">
+
+      <!-- Jury Radar Live Banner -->
+      <section id="juryRadarSection" class="transition-all duration-300" aria-label="Jury Radar Live Monitor Banner">
+        <div id="juryRadarBanner" class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-lg backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-300">
+          <div class="flex items-center gap-3 w-full sm:w-auto">
+            <div id="radarIndicatorDot" class="w-3.5 h-3.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-500/50 flex-shrink-0"></div>
+            <div class="min-w-0">
+              <div id="radarBannerTitle" class="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                <span>🟢 Jury Radar: Monitoring active</span>
+                <span class="text-xs text-slate-400 font-normal hidden sm:inline">(waiting for requests)</span>
+              </div>
+              <p id="radarBannerSubtitle" class="text-xs text-slate-400 truncate">Real-time prompt &amp; model response monitoring with repeating audio alarm</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+            <button id="radarMuteBtn" onclick="muteAlarm()" class="hidden px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm active:scale-95 animate-bounce" title="Mute active repeating alarm">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+              <span>🔇 Mute Alarm</span>
+            </button>
+            <button onclick="scrollToInspector()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md shadow-indigo-600/30 flex items-center gap-1.5 active:scale-95">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+              <span>Scroll to Logs</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Request Inspector & Jury Monitor Section -->
+      <section id="liveRequestInspector" class="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 md:p-6 shadow-sm space-y-5" aria-label="Live Request Inspector & Jury Monitor">
+        <!-- Section Header -->
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+          <div>
+            <div class="flex items-center gap-2.5">
+              <div class="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/><circle cx="12" cy="12" r="4"/>
+                </svg>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h2 class="text-lg font-bold text-white tracking-tight">Live Request Inspector &amp; Jury Monitor</h2>
+                  <span id="inspectorStatusPill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono">
+                    <span id="inspectorStatusDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="inspectorStatusText">LIVE (2s)</span>
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400 mt-0.5">Real-time inspection of prompts, messages, tool calls, and model responses for jury evaluation</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metric counter -->
+          <div class="flex items-center gap-2 text-xs">
+            <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl font-mono text-slate-300">
+              <span class="text-slate-500 text-[11px] font-sans">Total Logs:</span>
+              <span id="logsTotalCount" class="font-bold text-white ml-1">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Control & Filter Toolbar -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1">
+            <!-- Client Filter Dropdown -->
+            <div class="flex items-center gap-2">
+              <label for="clientKeyFilter" class="text-xs font-semibold text-slate-300 whitespace-nowrap">Filter by Client:</label>
+              <div class="relative min-w-[170px] sm:w-52">
+                <select id="clientKeyFilter" onchange="onLogClientFilterChange(this.value)" class="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none cursor-pointer pr-8 font-medium">
+                  <option value="">All Clients</option>
+                </select>
+                <div class="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-slate-400">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- Live Search Input -->
+            <div class="relative flex-1">
+              <input type="text" id="logSearchInput" oninput="onLogSearchInput(this.value)" placeholder="Search in prompt, response, tools, model, or label..." class="w-full bg-slate-900 border border-slate-800 text-white rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-slate-500">
+              <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+            <!-- Toggle Polling -->
+            <button id="togglePollingBtn" onclick="toggleInspectorPolling()" class="bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Pause or resume live polling">
+              <span id="pollingIconIndicator" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span id="pollingBtnText">Live Polling (2s)</span>
+            </button>
+
+            <!-- Sound Alarm Toggle -->
+            <button id="inspectorSoundBtn" onclick="toggleSoundAlerts()" class="bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Toggle Jury Alarm Sound">
+              <span id="inspectorSoundIcon">
+                <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                </svg>
+              </span>
+              <span id="inspectorSoundText">Sound: ON</span>
+            </button>
+
+            <!-- Test Sound -->
+            <button onclick="playAlarmChime(true)" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Test Jury Alarm Sound">
+              <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+              <span>Test Sound</span>
+            </button>
+
+            <!-- Clear Logs -->
+            <button onclick="openClearLogsConfirmModal()" class="bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Clear all stored logs">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <span>Clear Logs</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Logs Card Feed Container -->
+        <div id="requestLogsList" class="space-y-4">
+          <!-- Dynamically rendered logs or empty state -->
+          <div class="py-14 text-center bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 flex flex-col items-center justify-center">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-3 border border-indigo-500/20">
+              <svg class="w-6 h-6 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 14.83l4.24 4.24M14.83 9.17l4.24-4.24M4.93 19.07l4.24-4.24"/>
+              </svg>
+            </div>
+            <h4 class="text-sm font-semibold text-white">Waiting for incoming requests from jury...</h4>
+            <p class="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed">
+              New prompts, model responses, and inspection payloads will appear here in real time.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
 
   </main>
 
@@ -1137,6 +1172,59 @@
     let inspectorPollIntervalId = null;
     let isLogsFetching = false;
     let radarTickerIntervalId = null;
+
+    // --- Tabs Navigation System ---
+    function switchTab(tabId) {
+      const tabDashboard = document.getElementById("tabDashboard");
+      const tabInspector = document.getElementById("tabInspector");
+      const btnDashboard = document.getElementById("tabBtnDashboard");
+      const btnInspector = document.getElementById("tabBtnInspector");
+
+      if (!tabDashboard || !tabInspector) return;
+
+      const activeClasses = ["bg-indigo-600", "text-white", "shadow"];
+      const inactiveClasses = ["text-slate-400", "hover:text-white", "hover:bg-slate-800"];
+
+      if (tabId === "inspector") {
+        tabDashboard.classList.add("hidden");
+        tabInspector.classList.remove("hidden");
+
+        if (btnDashboard) {
+          btnDashboard.classList.remove(...activeClasses);
+          btnDashboard.classList.add(...inactiveClasses);
+          btnDashboard.setAttribute("aria-selected", "false");
+        }
+        if (btnInspector) {
+          btnInspector.classList.remove(...inactiveClasses);
+          btnInspector.classList.add(...activeClasses);
+          btnInspector.setAttribute("aria-selected", "true");
+        }
+
+        const badge = document.getElementById("inspectorNewBadge");
+        if (badge) badge.classList.add("hidden");
+
+        stopAlarmOnFocus();
+      } else {
+        tabId = "dashboard";
+        tabInspector.classList.add("hidden");
+        tabDashboard.classList.remove("hidden");
+
+        if (btnInspector) {
+          btnInspector.classList.remove(...activeClasses);
+          btnInspector.classList.add(...inactiveClasses);
+          btnInspector.setAttribute("aria-selected", "false");
+        }
+        if (btnDashboard) {
+          btnDashboard.classList.remove(...inactiveClasses);
+          btnDashboard.classList.add(...activeClasses);
+          btnDashboard.setAttribute("aria-selected", "true");
+        }
+      }
+
+      try {
+        localStorage.setItem("activeTab", tabId);
+      } catch (e) {}
+    }
 
     // --- Calculate fallback MSK 10:00 reset seconds ---
     function calculateFallbackResetSeconds() {
@@ -2696,24 +2784,44 @@
       const btn = document.getElementById("soundAlertBtn");
       const iconWrap = document.getElementById("soundIconWrapper");
       const txt = document.getElementById("soundAlertText");
-      if (!btn || !iconWrap || !txt) return;
+
+      const inspectorBtn = document.getElementById("inspectorSoundBtn");
+      const inspectorTxt = document.getElementById("inspectorSoundText");
 
       if (soundAlertsEnabled) {
-        btn.classList.remove("text-slate-500", "border-slate-800");
-        btn.classList.add("text-slate-200", "border-slate-700/80");
-        iconWrap.innerHTML = `
-          <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-          </svg>`;
-        txt.innerText = "Sound: ON";
+        if (btn) {
+          btn.classList.remove("text-slate-500", "border-slate-800");
+          btn.classList.add("text-slate-200", "border-slate-700/80");
+        }
+        if (iconWrap) {
+          iconWrap.innerHTML = `
+            <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+            </svg>`;
+        }
+        if (txt) txt.innerText = "Sound: ON";
+
+        if (inspectorBtn) {
+          inspectorBtn.className = "bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm";
+        }
+        if (inspectorTxt) inspectorTxt.innerText = "🔔 Sound: ON";
       } else {
-        btn.classList.remove("text-slate-200", "border-slate-700/80");
-        btn.classList.add("text-slate-500", "border-slate-800");
-        iconWrap.innerHTML = `
-          <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
-          </svg>`;
-        txt.innerText = "Sound: OFF";
+        if (btn) {
+          btn.classList.remove("text-slate-200", "border-slate-700/80");
+          btn.classList.add("text-slate-500", "border-slate-800");
+        }
+        if (iconWrap) {
+          iconWrap.innerHTML = `
+            <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+            </svg>`;
+        }
+        if (txt) txt.innerText = "Sound: OFF";
+
+        if (inspectorBtn) {
+          inspectorBtn.className = "bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5 active:scale-95 shadow-sm";
+        }
+        if (inspectorTxt) inspectorTxt.innerText = "🔕 Sound: OFF";
       }
     }
 
@@ -2799,6 +2907,7 @@
     }
 
     function scrollToInspector() {
+      switchTab("inspector");
       const el = document.getElementById("liveRequestInspector");
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2842,6 +2951,12 @@
           lastSeenLogId = Math.max(lastSeenLogId, ...newLogs.map(l => l.id));
           lastIncomingRequestTime = newest.timestamp;
           lastIncomingClientName = newest.client_key_name || (newest.client_key_id ? `Client #${newest.client_key_id}` : 'Direct API / Jury');
+
+          const currentTab = localStorage.getItem("activeTab") || "dashboard";
+          if (currentTab !== "inspector") {
+            const badge = document.getElementById("inspectorNewBadge");
+            if (badge) badge.classList.remove("hidden");
+          }
 
           const isBackground = document.hidden || !document.hasFocus();
           if (isBackground) {
@@ -2917,7 +3032,7 @@
     }
 
     function updateLogClientFilterOptions() {
-      const select = document.getElementById("logClientFilter");
+      const select = document.getElementById("clientKeyFilter") || document.getElementById("logClientFilter");
       if (!select) return;
       const currentVal = select.value;
 
@@ -2945,8 +3060,9 @@
     }
 
     function viewLogsForClient(clientKeyId, clientKeyName) {
+      switchTab("inspector");
       activeLogClientFilter = String(clientKeyId);
-      const select = document.getElementById("logClientFilter");
+      const select = document.getElementById("clientKeyFilter") || document.getElementById("logClientFilter");
       if (select) select.value = String(clientKeyId);
       renderRequestLogs();
       scrollToInspector();
@@ -2971,6 +3087,153 @@
       }
     }
 
+    // --- Tool Calls & Text Formatting Helpers ---
+    function copyToolArgs(logId, callIndex) {
+      const log = requestLogs.find(l => l.id === logId);
+      if (!log || !Array.isArray(log.tool_calls) || !log.tool_calls[callIndex]) return;
+      const call = log.tool_calls[callIndex];
+      let formatted = "";
+      try {
+        if (typeof call.args === "string") {
+          try {
+            formatted = JSON.stringify(JSON.parse(call.args), null, 2);
+          } catch (e) {
+            formatted = call.args;
+          }
+        } else if (call.args && typeof call.args === "object") {
+          formatted = JSON.stringify(call.args, null, 2);
+        } else {
+          formatted = "{}";
+        }
+      } catch (e) {
+        formatted = String(call.args || "{}");
+      }
+      copyToClipboard(formatted);
+      showToast("Copied", `Arguments for "${call.name || 'tool'}" copied`, "info");
+    }
+
+    function copyLogPrompt(logId) {
+      const log = requestLogs.find(l => l.id === logId);
+      if (!log) return;
+      copyToClipboard(log.prompt_text || "");
+    }
+
+    function copyLogResponse(logId) {
+      const log = requestLogs.find(l => l.id === logId);
+      if (!log) return;
+      copyToClipboard(log.response_text || log.error_message || "");
+    }
+
+    function copyLogRawJson(logId) {
+      const log = requestLogs.find(l => l.id === logId);
+      if (!log) return;
+      const clientLabel = log.client_key_name || (log.client_key_id ? `Client #${log.client_key_id}` : "Direct API / Jury");
+      const googleKeyLabel = log.google_key_label || (log.google_key_id ? `Key #${log.google_key_id}` : "No Key Selected");
+      const rawPayload = {
+        id: log.id,
+        timestamp: log.timestamp,
+        timestamp_iso: log.timestamp_iso,
+        client: clientLabel,
+        google_key: googleKeyLabel,
+        model_id: log.model_id,
+        action: log.action,
+        status_code: log.status_code,
+        latency_ms: log.latency_ms,
+        tokens_in: log.tokens_in,
+        tokens_out: log.tokens_out,
+        prompt_text: log.prompt_text,
+        prompt_full: log.prompt_full || null,
+        response_text: log.response_text,
+        response_full: log.response_full || null,
+        tool_calls: log.tool_calls || [],
+        error_message: log.error_message
+      };
+      copyToClipboard(JSON.stringify(rawPayload, null, 2));
+    }
+
+    function formatLogText(text) {
+      if (!text) return "";
+      const escaped = escapeHtml(text);
+
+      if (!escaped.includes("🛠️") && !escaped.includes("📦") && !escaped.includes("Tool Call:") && !escaped.includes("Tool Response")) {
+        return escaped;
+      }
+
+      const lines = escaped.split("\n");
+      const result = [];
+      let inNormalText = [];
+
+      const flushNormalText = () => {
+        if (inNormalText.length > 0) {
+          result.push(inNormalText.join("<br>"));
+          inNormalText = [];
+        }
+      };
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const toolCallMatch = line.match(/^(?:🛠️\s*)?Tool Call:\s*([a-zA-Z0-9_\-\.]+)(?:\((.*)\))?$/);
+        const toolRespMatch = line.match(/^(?:📦\s*)?Tool Response\s*\[(.*?)\]:\s*(.*)$/);
+
+        if (toolCallMatch) {
+          flushNormalText();
+          const toolName = toolCallMatch[1].trim();
+          const toolArgs = toolCallMatch[2] !== undefined ? toolCallMatch[2] : "";
+
+          let prettyArgs = toolArgs;
+          try {
+            const unescaped = toolArgs.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            const parsed = JSON.parse(unescaped);
+            prettyArgs = escapeHtml(JSON.stringify(parsed, null, 2));
+          } catch (e) {
+            prettyArgs = toolArgs;
+          }
+
+          result.push(`
+            <div class="my-2 p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/40 shadow-sm">
+              <div class="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-indigo-500/20 text-xs">
+                <span class="inline-flex items-center gap-1.5 font-bold px-2 py-0.5 rounded-md bg-indigo-600 text-white shadow-sm">
+                  <span>🛠️ Tool Call:</span>
+                  <span class="font-mono">${escapeHtml(toolName)}</span>
+                </span>
+              </div>
+              ${prettyArgs ? `<pre class="font-mono text-xs text-indigo-200 bg-slate-950/80 p-2 rounded-lg border border-indigo-500/20 whitespace-pre-wrap break-all leading-relaxed">${prettyArgs}</pre>` : ''}
+            </div>
+          `);
+        } else if (toolRespMatch) {
+          flushNormalText();
+          const toolName = toolRespMatch[1].trim();
+          const toolResp = toolRespMatch[2] !== undefined ? toolRespMatch[2] : "";
+
+          let prettyResp = toolResp;
+          try {
+            const unescaped = toolResp.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            const parsed = JSON.parse(unescaped);
+            prettyResp = escapeHtml(JSON.stringify(parsed, null, 2));
+          } catch (e) {
+            prettyResp = toolResp;
+          }
+
+          result.push(`
+            <div class="my-2 p-3 rounded-xl bg-teal-950/40 border border-teal-500/40 shadow-sm">
+              <div class="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-teal-500/20 text-xs">
+                <span class="inline-flex items-center gap-1.5 font-bold px-2 py-0.5 rounded-md bg-teal-600 text-white shadow-sm">
+                  <span>📦 Tool Response:</span>
+                  <span class="font-mono">[${escapeHtml(toolName)}]</span>
+                </span>
+              </div>
+              ${prettyResp ? `<pre class="font-mono text-xs text-teal-200 bg-slate-950/80 p-2 rounded-lg border border-teal-500/20 whitespace-pre-wrap break-all leading-relaxed">${prettyResp}</pre>` : ''}
+            </div>
+          `);
+        } else {
+          inNormalText.push(line);
+        }
+      }
+      flushNormalText();
+
+      return result.join("");
+    }
+
     function renderRequestLogs() {
       const container = document.getElementById("requestLogsList");
       const totalCountElem = document.getElementById("logsTotalCount");
@@ -2990,7 +3253,8 @@
           const c = (l.client_key_name || "").toLowerCase();
           const g = (l.google_key_label || "").toLowerCase();
           const e = (l.error_message || "").toLowerCase();
-          return p.includes(logSearchQuery) || r.includes(logSearchQuery) || m.includes(logSearchQuery) || c.includes(logSearchQuery) || g.includes(logSearchQuery) || e.includes(logSearchQuery);
+          const tc = Array.isArray(l.tool_calls) ? JSON.stringify(l.tool_calls).toLowerCase() : "";
+          return p.includes(logSearchQuery) || r.includes(logSearchQuery) || m.includes(logSearchQuery) || c.includes(logSearchQuery) || g.includes(logSearchQuery) || e.includes(logSearchQuery) || tc.includes(logSearchQuery);
         });
       }
 
@@ -3062,6 +3326,85 @@
           </span>
         `;
 
+        // Prompt HTML
+        let promptHtml = "";
+        if (log.prompt_text && log.prompt_text.trim()) {
+          promptHtml = formatLogText(log.prompt_text);
+        } else {
+          promptHtml = `<span class="text-slate-500 italic font-sans">(Empty prompt text)</span>`;
+        }
+
+        // Dedicated Tool Calls Block Under Prompt
+        let toolCallsBlockHtml = "";
+        if (Array.isArray(log.tool_calls) && log.tool_calls.length > 0) {
+          toolCallsBlockHtml = `
+            <div class="mt-3 space-y-2.5">
+              ${log.tool_calls.map((call, idx) => {
+                let formattedArgs = "";
+                try {
+                  if (typeof call.args === "string") {
+                    try {
+                      formattedArgs = JSON.stringify(JSON.parse(call.args), null, 2);
+                    } catch (e) {
+                      formattedArgs = call.args;
+                    }
+                  } else if (call.args && typeof call.args === "object") {
+                    formattedArgs = JSON.stringify(call.args, null, 2);
+                  } else {
+                    formattedArgs = "{}";
+                  }
+                } catch (e) {
+                  formattedArgs = String(call.args || "{}");
+                }
+
+                const callName = call.name || `tool_${idx + 1}`;
+                const callIdBadge = call.id ? `<span class="px-2 py-0.5 rounded text-[10px] font-mono text-indigo-300 bg-indigo-950/70 border border-indigo-800/60" title="Tool Call ID">ID: ${escapeHtml(call.id)}</span>` : "";
+                const thoughtBadge = call.thought_signature ? `<span class="px-2 py-0.5 rounded text-[10px] font-mono text-purple-300 bg-purple-950/70 border border-purple-800/60" title="Thought Signature">thought: ${escapeHtml(String(call.thought_signature).slice(0, 16))}...</span>` : "";
+
+                return `
+                  <div class="bg-slate-950/90 border border-indigo-500/50 rounded-xl p-3 shadow-md shadow-indigo-950/40">
+                    <div class="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-indigo-500/20 flex-wrap">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-sm shadow-indigo-600/30">
+                          <span>🛠️ Tool Call:</span>
+                          <span class="font-mono text-indigo-100">${escapeHtml(callName)}</span>
+                        </span>
+                        ${callIdBadge}
+                        ${thoughtBadge}
+                      </div>
+                      <button onclick="copyToolArgs(${log.id}, ${idx})" class="text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs bg-slate-800/90 hover:bg-slate-700 px-2.5 py-1 rounded-lg border border-slate-700 active:scale-95 shadow-sm font-medium" title="Copy Tool Arguments">
+                        <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        <span>Copy Args</span>
+                      </button>
+                    </div>
+                    <div class="relative">
+                      <pre class="font-mono text-xs text-emerald-300 bg-slate-900/90 rounded-lg p-2.5 overflow-x-auto max-h-52 leading-relaxed whitespace-pre-wrap break-all border border-slate-800">${escapeHtml(formattedArgs)}</pre>
+                    </div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          `;
+        }
+
+        // Response HTML
+        let responseHtml = "";
+        if (log.error_message) {
+          responseHtml = `<span class="text-rose-400 font-mono">${escapeHtml(log.error_message)}</span>`;
+        } else if (log.response_text && log.response_text.trim()) {
+          responseHtml = formatLogText(log.response_text);
+        } else if (Array.isArray(log.tool_calls) && log.tool_calls.length > 0) {
+          const toolNames = log.tool_calls.map(c => c.name).filter(Boolean).join(", ") || "tool";
+          responseHtml = `
+            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 text-xs font-semibold shadow-sm">
+              <svg class="w-4 h-4 text-indigo-400 animate-pulse flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              <span>Executed tool: <strong class="text-white font-mono">${escapeHtml(toolNames)}</strong></span>
+            </div>
+          `;
+        } else {
+          responseHtml = `<span class="text-slate-500 italic font-sans">(Empty model output)</span>`;
+        }
+
         const rawPayload = {
           id: log.id,
           timestamp: log.timestamp,
@@ -3078,6 +3421,7 @@
           prompt_full: log.prompt_full || null,
           response_text: log.response_text,
           response_full: log.response_full || null,
+          tool_calls: log.tool_calls || [],
           error_message: log.error_message
         };
         const rawJsonString = JSON.stringify(rawPayload, null, 2);
@@ -3118,14 +3462,15 @@
                     <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                     Prompt from Jury / Client
                   </span>
-                  <button onclick="copyToClipboard(decodeURIComponent('${encodeURIComponent(log.prompt_text || '')}'), this)" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px] bg-slate-800/80 hover:bg-slate-700 px-2 py-0.5 rounded border border-slate-700/80" title="Copy Prompt Text">
+                  <button onclick="copyLogPrompt(${log.id})" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px] bg-slate-800/80 hover:bg-slate-700 px-2 py-0.5 rounded border border-slate-700/80" title="Copy Prompt Text">
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     Copy Prompt
                   </button>
                 </div>
                 <div class="bg-slate-950 rounded-xl p-3 border-l-2 border-indigo-500 border border-slate-800/80 text-xs sm:text-sm text-slate-200 font-sans leading-relaxed max-h-56 overflow-y-auto whitespace-pre-wrap break-words flex-1">
-                  ${escapeHtml(log.prompt_text || '(Empty prompt text)')}
+                  ${promptHtml}
                 </div>
+                ${toolCallsBlockHtml}
               </div>
 
               <div class="flex flex-col">
@@ -3134,13 +3479,13 @@
                     <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg>
                     Model Response
                   </span>
-                  <button onclick="copyToClipboard(decodeURIComponent('${encodeURIComponent(log.response_text || '')}'), this)" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px] bg-slate-800/80 hover:bg-slate-700 px-2 py-0.5 rounded border border-slate-700/80" title="Copy Response Text">
+                  <button onclick="copyLogResponse(${log.id})" class="text-slate-400 hover:text-white transition flex items-center gap-1 text-[11px] bg-slate-800/80 hover:bg-slate-700 px-2 py-0.5 rounded border border-slate-700/80" title="Copy Response Text">
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     Copy Response
                   </button>
                 </div>
                 <div class="bg-slate-950 rounded-xl p-3 border-l-2 ${log.error_message ? 'border-rose-500' : 'border-emerald-500'} border border-slate-800/80 text-xs sm:text-sm ${log.error_message ? 'text-rose-300 font-mono' : 'text-slate-200 font-sans'} leading-relaxed max-h-56 overflow-y-auto whitespace-pre-wrap break-words flex-1">
-                  ${escapeHtml(log.response_text || (log.error_message ? `Error: ${log.error_message}` : '(No text response)'))}
+                  ${responseHtml}
                 </div>
               </div>
             </div>
@@ -3160,7 +3505,7 @@
                     <svg id="logJsonIcon-${log.id}" class="w-3.5 h-3.5 transition-transform duration-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                     <span id="logJsonText-${log.id}">Show Raw JSON Payload</span>
                   </button>
-                  <button onclick="copyToClipboard(decodeURIComponent('${encodeURIComponent(rawJsonString)}'), this)" class="text-slate-500 hover:text-slate-300 transition text-[11px] flex items-center gap-1 font-sans">
+                  <button onclick="copyLogRawJson(${log.id})" class="text-slate-500 hover:text-slate-300 transition text-[11px] flex items-center gap-1 font-sans">
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     Copy JSON
                   </button>
@@ -3181,7 +3526,7 @@
     function clearInspectorFilters() {
       activeLogClientFilter = "";
       logSearchQuery = "";
-      const select = document.getElementById("logClientFilter");
+      const select = document.getElementById("clientKeyFilter") || document.getElementById("logClientFilter");
       const search = document.getElementById("logSearchInput");
       if (select) select.value = "";
       if (search) search.value = "";
@@ -3249,6 +3594,10 @@
 
     // --- App Initialization ---
     window.addEventListener("DOMContentLoaded", () => {
+      // 0. Restore active tab from localStorage
+      const savedTab = localStorage.getItem("activeTab") || "dashboard";
+      switchTab(savedTab);
+
       // 1. Populate model dropdowns
       populateModelDropdowns();
 
