@@ -1963,6 +1963,49 @@ async def test_bulk_create_keys_skips_duplicates(
     assert data["results"][3]["key_id"] is None
 
 
+@pytest.mark.asyncio
+async def test_proxy_and_engine_sanitize_dry_run_and_wait_timeout(
+    test_db: DatabaseManager, async_client: httpx.AsyncClient
+) -> None:
+    """Verify dry_run and wait_timeout are popped from request body before forwarding to Google Gemini upstream."""
+    internal_client = await get_http_client()
+    captured_payloads: list[dict[str, object]] = []
+
+    async def mock_post(url: str, *args: object, **kwargs: object) -> httpx.Response:
+        json_body = kwargs.get("json")
+        if isinstance(json_body, dict):
+            captured_payloads.append(dict(json_body))
+        return httpx.Response(
+            status_code=200,
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": "Sanitized response"}],
+                            "role": "model",
+                        }
+                    }
+                ],
+                "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 20},
+            },
+        )
+
+    with patch.object(internal_client, "post", side_effect=mock_post):
+        resp = await async_client.post(
+            "/v1beta/models/antigravity:generateContent",
+            json={
+                "contents": [{"parts": [{"text": "Hello sanitizer"}]}],
+                "dry_run": False,
+                "wait_timeout": 5.0,
+            },
+        )
+        assert resp.status_code == 200
+        assert len(captured_payloads) == 1
+        assert "dry_run" not in captured_payloads[0]
+        assert "wait_timeout" not in captured_payloads[0]
+
+
+
 
 
 

@@ -411,8 +411,9 @@ async def proxy_model_action(
             parsed = json.loads(raw_body.decode("utf-8"))
             if isinstance(parsed, dict):
                 body_dict = parsed
-                if "dry_run" in body_dict and bool(body_dict["dry_run"]):
-                    is_dry = True
+                if "dry_run" in body_dict:
+                    if bool(body_dict.pop("dry_run")):
+                        is_dry = True
         except json.JSONDecodeError as exc:
             raise RouterException(
                 status_code=400,
@@ -485,15 +486,16 @@ async def proxy_model_action(
         except ValueError as exc:
             logger.debug("Failed to parse X-Wait-Timeout header: %s", exc)
 
-    if "wait_timeout" in body_dict and timeout_val == 0.0 and x_wait_timeout is None:
-        raw_bt = body_dict["wait_timeout"]
-        if isinstance(raw_bt, (int, float)):
-            timeout_val = float(raw_bt)
-        elif isinstance(raw_bt, str):
-            try:
+    if "wait_timeout" in body_dict:
+        raw_bt = body_dict.pop("wait_timeout")
+        if timeout_val == 0.0 and x_wait_timeout is None:
+            if isinstance(raw_bt, (int, float)):
                 timeout_val = float(raw_bt)
-            except ValueError as exc:
-                logger.debug("Failed to parse wait_timeout from body: %s", exc)
+            elif isinstance(raw_bt, str):
+                try:
+                    timeout_val = float(raw_bt)
+                except ValueError as exc:
+                    logger.debug("Failed to parse wait_timeout from body: %s", exc)
 
     if timeout_val < 0:
         effective_wait_timeout = MAX_QUEUE_WAIT_SECONDS

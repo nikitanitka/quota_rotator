@@ -700,9 +700,12 @@ async def execute_request(
 
                 try:
                     await restore_missing_thought_signatures(body)
+                    upstream_body: dict[str, object] = dict(body) if isinstance(body, dict) else {}
+                    upstream_body.pop("dry_run", None)
+                    upstream_body.pop("wait_timeout", None)
                     resp = await client.post(
                         upstream_url,
-                        json=body or {},
+                        json=upstream_body,
                         headers=req_headers,
                     )
                 except httpx.RequestError as exc:
@@ -1006,10 +1009,13 @@ async def execute_streaming_request(
             try:
                 try:
                     await restore_missing_thought_signatures(body)
+                    upstream_body: dict[str, object] = dict(body) if isinstance(body, dict) else {}
+                    upstream_body.pop("dry_run", None)
+                    upstream_body.pop("wait_timeout", None)
                     stream_ctx = client.stream(
                         "POST",
                         upstream_url,
-                        json=body or {},
+                        json=upstream_body,
                         headers=req_headers,
                     )
                     async with stream_ctx as resp:

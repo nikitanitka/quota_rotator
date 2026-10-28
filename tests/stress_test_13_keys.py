@@ -241,7 +241,6 @@ async def run_stress_test(
                 ]
             }
         ],
-        "dry_run": dry_run,
     }
 
     limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
@@ -283,7 +282,7 @@ def main() -> None:
         "--url",
         "-u",
         type=str,
-        default="http://localhost:8000/v1beta/models/gemini-3.1-flash-lite:generateContent",
+        default="http://localhost:8000/v1beta/models/gemini-3.5-flash-lite:generateContent",
         help="Router endpoint URL (default: http://localhost:8000/v1beta/models/gemini-3.1-flash-lite:generateContent)",
     )
     parser.add_argument(
