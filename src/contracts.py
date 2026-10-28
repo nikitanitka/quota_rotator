@@ -57,11 +57,11 @@ MAX_QUEUE_WAIT_SECONDS: float = 86400.0
 INITIAL_PRELOADED_KEYS: list[dict[str, str]] = [
     {
         "label": "Key-Alpha-1",
-        "key_value": "test",
+        "key_value": "test-key-alpha-1-mock",
     },
     {
         "label": "Key-Beta-2",
-        "key_value": "test",
+        "key_value": "test-key-beta-2-mock",
     },
 ]
 

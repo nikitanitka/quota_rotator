@@ -133,6 +133,12 @@ async def root_index() -> HTMLResponse:
     )
 
 
+@app.get("/health")
+async def health_check() -> dict[str, str]:
+    """Lightweight health check endpoint for monitoring and Docker/K8s."""
+    return {"status": "ok"}
+
+
 @app.get("/api/status", response_model=PoolStatusResponse)
 async def get_pool_status(
     model: str = Query("antigravity", description="Target model for quota status evaluation")

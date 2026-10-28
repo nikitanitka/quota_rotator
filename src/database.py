@@ -169,7 +169,7 @@ class DatabaseManager:
             for item in INITIAL_PRELOADED_KEYS:
                 cursor.execute(
                     """
-                    INSERT INTO api_keys (
+                    INSERT OR IGNORE INTO api_keys (
                         key_value, label, status, is_disabled, consecutive_429,
                         cooldown_until, created_at, updated_at
                     ) VALUES (?, ?, 'READY', 0, 0, 0.0, ?, ?)
