@@ -25,6 +25,31 @@ class RequestMetrics(NamedTuple):
     error_message: str | None = None
 
 
+def resolve_default_client_key() -> str:
+    """Resolve client key from env, local database, or fallback constant."""
+    env_key = os.getenv("ROUTER_CLIENT_KEY")
+    if env_key and env_key.strip():
+        return env_key.strip()
+
+    db_path = os.getenv("DB_PATH", "data/router.db")
+    if os.path.exists(db_path):
+        try:
+            import sqlite3
+
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT key_value FROM client_keys WHERE status = 'ACTIVE' ORDER BY id DESC LIMIT 1"
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    return str(row[0]).strip()
+        except Exception:
+            pass
+
+    return "gkr-live-3f5db109a982efcc492c9f51f5fb0585"
+
+
 def calculate_percentile(values: list[float], percentile: float) -> float:
     """Calculate the given percentile (0-100) from a list of floats."""
     if not values:
@@ -106,6 +131,7 @@ def print_report(
     concurrency: int,
     elapsed_total_sec: float,
     metrics: list[RequestMetrics],
+    client_key: str | None = None,
 ) -> None:
     """Print beautifully formatted stress test execution summary and key distribution."""
     cyan = "\033[96m"
@@ -140,17 +166,25 @@ def print_report(
     print(bold + cyan + "       GEMINI KEY POOL ROUTER - STRESS TEST REPORT (13 KEYS POOL)       " + reset)
     print(bold + cyan + "═" * 70 + reset)
 
+    key_display = f"{client_key[:12]}...{client_key[-4:]}" if client_key and len(client_key) > 16 else (client_key or "None")
     print(f"\n{bold}Configuration & Overview:{reset}")
     print(f"  • Total Requests Sent : {bold}{total_requests}{reset}")
     print(f"  • Concurrency Level   : {bold}{concurrency}{reset}")
     print(f"  • Total Wall Time     : {bold}{elapsed_total_sec:.2f}s{reset}")
     print(f"  • Throughput          : {bold}{rps:.2f} req/sec{reset}")
+    print(f"  • Ingress Auth Key    : {bold}{cyan}{key_display}{reset}")
 
     rate_color = green if success_rate >= 95.0 else (yellow if success_rate >= 80.0 else red)
     print(f"\n{bold}Execution Outcomes:{reset}")
     print(f"  • Successful Responses: {green}{success_count}{reset}")
     print(f"  • Failed Responses    : {red if failure_count > 0 else green}{failure_count}{reset}")
     print(f"  • Success Rate        : {bold}{rate_color}{success_rate:.1f}%{reset}")
+
+    if failure_count > 0:
+        print(f"\n{bold}Failure Samples:{reset}")
+        samples = [m.error_message for m in metrics if not m.success and m.error_message][:3]
+        for s in samples:
+            print(f"  • {red}{s}{reset}")
 
     print(f"\n{bold}Latency Profile (ms):{reset}")
     print(f"  • Min Latency         : {min_lat:.1f} ms")
@@ -235,6 +269,7 @@ async def run_stress_test(
         concurrency=concurrency,
         elapsed_total_sec=elapsed_total,
         metrics=list(results),
+        client_key=client_key,
     )
     return list(results)
 
@@ -269,8 +304,8 @@ def main() -> None:
         "--key",
         "-k",
         type=str,
-        default=os.getenv("ROUTER_CLIENT_KEY"),
-        help="Optional client API key for authenticated proxy access",
+        default=resolve_default_client_key(),
+        help="Client API key for router authentication (default: auto-detected from DB or ROUTER_CLIENT_KEY)",
     )
     parser.add_argument(
         "--live",
