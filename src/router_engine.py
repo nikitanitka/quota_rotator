@@ -59,6 +59,19 @@ _shared_client: httpx.AsyncClient | None = None
 _in_flight_lock: asyncio.Lock = asyncio.Lock()
 _in_flight_requests: dict[int, int] = {}
 
+_last_used_lock: asyncio.Lock = asyncio.Lock()
+_last_used_timestamps: dict[int, float] = {}
+
+
+def get_last_used_timestamps() -> dict[int, float]:
+    """Return a snapshot of last-used timestamps per key ID."""
+    return dict(_last_used_timestamps)
+
+
+def reset_last_used_timestamps() -> None:
+    """Clear all recorded last-used timestamps."""
+    _last_used_timestamps.clear()
+
 _thought_signature_lock: asyncio.Lock = asyncio.Lock()
 _thought_signature_cache: dict[tuple[str, str], str] = {}
 _thought_signature_by_name: dict[str, str] = {}
@@ -465,15 +478,15 @@ async def select_best_key(
             message="No keys are available for selection.",
         )
 
-    async with _in_flight_lock:
+    async with _in_flight_lock, _last_used_lock:
         best_key: dict[str, object] | None = None
-        min_sort_key: tuple[int, int, int] | None = None
+        min_sort_key: tuple[int, float] | None = None
 
-        for round_robin_index, candidate in enumerate(ready_candidates):
+        for candidate in ready_candidates:
             cid = int(candidate["id"])
             in_flight_count = _in_flight_requests.get(cid, 0)
-            total_rpd = await db.get_total_rpd_usage(cid, window_start)
-            sort_key = (in_flight_count, total_rpd, round_robin_index)
+            last_used = _last_used_timestamps.get(cid, 0.0)
+            sort_key = (in_flight_count, last_used)
             if min_sort_key is None or sort_key < min_sort_key:
                 min_sort_key = sort_key
                 best_key = candidate
@@ -486,6 +499,7 @@ async def select_best_key(
             )
 
         best_id = int(best_key["id"])
+        _last_used_timestamps[best_id] = time.time()
         if acquire_in_flight:
             _in_flight_requests[best_id] = _in_flight_requests.get(best_id, 0) + 1
 
@@ -740,6 +754,7 @@ async def execute_request(
 
                 # 429 Rate Limited
                 if resp.status_code == 429:
+                    error_body = resp.text[:300]
                     current_key = await db.get_key_by_id(key_res.key_id)
                     consecutive = int(current_key["consecutive_429"]) if current_key else 0
                     cooldown = (
@@ -761,13 +776,15 @@ async def execute_request(
                         is_dry_run=False,
                     )
                     excluded_key_ids.add(key_res.key_id)
-                    last_error_status = 429
-                    last_error_message = (
-                        "Upstream returned 429 and all retry attempts were exhausted."
+                    logger.warning(
+                        f"Upstream returned 429 on key {key_res.key_id} ({key_res.label}): {error_body}. "
+                        f"Cooldown applied: {cooldown}s"
                     )
+                    last_error_status = 429
+                    last_error_message = f"Google Rate Limit (429) on {key_res.label}: {error_body}"
                     last_key_label = key_res.label
                     if attempt < 2:
-                        await asyncio.sleep(random.uniform(0.2, 0.5))
+                        await asyncio.sleep(0.5 * (attempt + 1) + random.uniform(0.1, 0.3))
                         continue
                     raise RouterException(
                         status_code=429,
@@ -1021,6 +1038,7 @@ async def execute_streaming_request(
                     async with stream_ctx as resp:
                         if resp.status_code == 429:
                             error_text = (await resp.aread()).decode("utf-8", errors="replace")
+                            error_body = error_text[:300]
                             current_key = await db.get_key_by_id(key_res.key_id)
                             consecutive = int(current_key["consecutive_429"]) if current_key else 0
                             cooldown = (
@@ -1041,10 +1059,12 @@ async def execute_streaming_request(
                                 is_dry_run=False,
                             )
                             excluded_key_ids.add(key_res.key_id)
-                            last_error_status = 429
-                            last_error_message = (
-                                "Upstream returned 429 and all retry attempts were exhausted."
+                            logger.warning(
+                                f"Upstream returned 429 on key {key_res.key_id} ({key_res.label}): {error_body}. "
+                                f"Cooldown applied: {cooldown}s"
                             )
+                            last_error_status = 429
+                            last_error_message = f"Google Rate Limit (429) on {key_res.label}: {error_body}"
                             last_key_label = key_res.label
                             if attempt < 2:
                                 should_retry = True
@@ -1233,7 +1253,7 @@ async def execute_streaming_request(
                 await decrement_in_flight(key_res.key_id)
 
             if should_retry:
-                await asyncio.sleep(random.uniform(0.2, 0.5))
+                await asyncio.sleep(0.5 * (attempt + 1) + random.uniform(0.1, 0.3))
 
         raise RouterException(
             status_code=last_error_status,

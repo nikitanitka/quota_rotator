@@ -52,6 +52,7 @@ from src.router_engine import (
     get_seconds_until_next_msk_reset,
     increment_in_flight,
     reset_in_flight_requests,
+    reset_last_used_timestamps,
     restore_missing_thought_signatures,
     select_best_key,
     select_best_key_with_wait,
@@ -62,6 +63,7 @@ from src.router_engine import (
 async def test_db(tmp_path: Path) -> AsyncGenerator[DatabaseManager, None]:
     """Create and initialize an isolated test database in a temporary directory."""
     reset_in_flight_requests()
+    reset_last_used_timestamps()
     db_file = tmp_path / "test_router.db"
     db = DatabaseManager(db_path=str(db_file))
     await db.initialize()
@@ -70,6 +72,7 @@ async def test_db(tmp_path: Path) -> AsyncGenerator[DatabaseManager, None]:
     await db.close()
     await close_http_client()
     reset_in_flight_requests()
+    reset_last_used_timestamps()
 
 
 @pytest.fixture
@@ -2003,6 +2006,38 @@ async def test_proxy_and_engine_sanitize_dry_run_and_wait_timeout(
         assert len(captured_payloads) == 1
         assert "dry_run" not in captured_payloads[0]
         assert "wait_timeout" not in captured_payloads[0]
+
+
+@pytest.mark.asyncio
+async def test_lru_key_selection_cyclic_rotation(test_db: DatabaseManager) -> None:
+    """Verify select_best_key cycles through all ready keys via LRU without repeats until full cycle completes."""
+    await test_db.add_key(key_value="AQ.KeyPoolTest_Gamma3_NWZgA", label="Key-Gamma-3")
+    await test_db.add_key(key_value="AQ.KeyPoolTest_Delta4_kySHQ", label="Key-Delta-4")
+    await test_db.add_key(key_value="AQ.KeyPoolTest_Epsilon5_VWP_k", label="Key-Epsilon-5")
+
+    all_keys = await test_db.get_all_keys()
+    assert len(all_keys) == 5
+    expected_ids = [int(k["id"]) for k in all_keys]
+
+    reset_last_used_timestamps()
+
+    selected_cycle_1: list[int] = []
+    for _ in range(len(all_keys)):
+        sel = await select_best_key("antigravity", test_db)
+        selected_cycle_1.append(sel.key_id)
+
+    assert len(set(selected_cycle_1)) == 5
+    assert set(selected_cycle_1) == set(expected_ids)
+
+    selected_cycle_2: list[int] = []
+    for _ in range(len(all_keys)):
+        sel = await select_best_key("antigravity", test_db)
+        selected_cycle_2.append(sel.key_id)
+
+    assert len(set(selected_cycle_2)) == 5
+    assert set(selected_cycle_2) == set(expected_ids)
+    assert selected_cycle_2 == selected_cycle_1
+
 
 
 
