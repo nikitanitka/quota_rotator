@@ -1848,6 +1848,122 @@ async def test_stress_test_13_keys_pool(
     )
 
 
+@pytest.mark.asyncio
+async def test_bulk_create_keys_with_suffix_auto_naming(
+    test_db: DatabaseManager, async_client: httpx.AsyncClient
+) -> None:
+    """Bulk create keys automatically named by matching known suffixes."""
+    raw_keys = (
+        "AQ.Ab8RN6SuffixTestKey1_fQiVQ\n"
+        "AQ.Ab8RN6SuffixTestKey2_HACVg\n"
+        "AQ.Ab8RN6SuffixTestKey3_Td6lg\n"
+        "AQ.Ab8RN6SuffixTestKey4_wgNWw\n"
+    )
+    resp = await async_client.post("/api/keys/bulk", json={"raw_keys": raw_keys})
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+
+    assert data["added_count"] == 4
+    assert data["skipped_count"] == 0
+    assert len(data["results"]) == 4
+    assert len(data["keys"]) == 4
+
+    assert data["results"][0]["label"] == "Mama"
+    assert data["results"][0]["status"] == "added"
+    assert data["results"][0]["key_id"] is not None
+
+    assert data["results"][1]["label"] == "Nikitaloskutov"
+    assert data["results"][1]["status"] == "added"
+    assert data["results"][1]["key_id"] is not None
+
+    assert data["results"][2]["label"] == "artem1"
+    assert data["results"][2]["status"] == "added"
+    assert data["results"][2]["key_id"] is not None
+
+    assert data["results"][3]["label"] == "artem5"
+    assert data["results"][3]["status"] == "added"
+    assert data["results"][3]["key_id"] is not None
+
+    keys_labels = [k["label"] for k in data["keys"]]
+    assert keys_labels == ["Mama", "Nikitaloskutov", "artem1", "artem5"]
+
+    all_keys = await test_db.get_all_keys()
+    db_labels = [str(k["label"]) for k in all_keys]
+    assert "Mama" in db_labels
+    assert "Nikitaloskutov" in db_labels
+    assert "artem1" in db_labels
+    assert "artem5" in db_labels
+
+
+@pytest.mark.asyncio
+async def test_bulk_create_keys_with_explicit_labels(
+    test_db: DatabaseManager, async_client: httpx.AsyncClient
+) -> None:
+    """Bulk create keys with explicit 'Label:Key' and 'Label = Key' syntax."""
+    raw_keys = (
+        "# A comment line to skip\n"
+        "\n"
+        "MyLabel:AQ.Ab8RN6ExplicitKey_12345678\n"
+        "AnotherLabel = AQ.Ab8RN6ExplicitKey_87654321\n"
+    )
+    resp = await async_client.post("/api/keys/bulk", json={"raw_keys": raw_keys})
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+
+    assert data["added_count"] == 2
+    assert data["skipped_count"] == 0
+    assert len(data["results"]) == 2
+
+    assert data["results"][0]["label"] == "MyLabel"
+    assert data["results"][0]["status"] == "added"
+
+    assert data["results"][1]["label"] == "AnotherLabel"
+    assert data["results"][1]["status"] == "added"
+
+    keys_labels = [k["label"] for k in data["keys"]]
+    assert keys_labels == ["MyLabel", "AnotherLabel"]
+
+
+@pytest.mark.asyncio
+async def test_bulk_create_keys_skips_duplicates(
+    test_db: DatabaseManager, async_client: httpx.AsyncClient
+) -> None:
+    """Bulk create keys skips duplicates from DB, intra-batch duplicates, and invalid keys."""
+    existing_preloaded = INITIAL_PRELOADED_KEYS[0]["key_value"]
+    fresh_key = "AQ.Ab8RN6FreshBulkKey_13579"
+
+    raw_keys = (
+        f"{existing_preloaded}\n"
+        f"{fresh_key}\n"
+        f"DuplicateLabel:{fresh_key}\n"
+        "tiny\n"
+    )
+    resp = await async_client.post("/api/keys/bulk", json={"raw_keys": raw_keys})
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+
+    assert data["added_count"] == 1
+    assert data["skipped_count"] == 3
+    assert len(data["results"]) == 4
+
+    # 1. Existing preloaded key is duplicate
+    assert data["results"][0]["status"] == "skipped_duplicate"
+    assert data["results"][0]["key_id"] is None
+
+    # 2. Fresh key added
+    assert data["results"][1]["status"] == "added"
+    assert data["results"][1]["key_id"] is not None
+
+    # 3. Intra-batch duplicate of fresh key is skipped
+    assert data["results"][2]["status"] == "skipped_duplicate"
+    assert data["results"][2]["key_id"] is None
+
+    # 4. Short key (<8 chars) is invalid
+    assert data["results"][3]["status"] == "invalid"
+    assert data["results"][3]["key_id"] is None
+
+
+
 
 
 

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import json
 import secrets
+from typing import Literal
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -63,6 +64,31 @@ INITIAL_PRELOADED_KEYS: list[dict[str, str]] = [
         "key_value": "test",
     },
 ]
+
+KNOWN_KEY_SUFFIX_LABELS: dict[str, str] = {
+    "fQiVQ": "Mama",
+    "HACVg": "Nikitaloskutov",
+    "EDTLw": "My5",
+    "SsIgw": "my6",
+    "Td6lg": "artem1",
+    "OYp3g": "artem2",
+    "mVqdA": "artem4",
+    "vitGQ": "artem3",
+    "wgNWw": "artem5",
+    "NWZgA": "Key-Alpha-1",
+    "kySHQ": "Key-Beta-2",
+    "VWP_k": "Key-Gamma-3",
+    "C5Eus": "Key-Delta-4",
+}
+
+
+def resolve_key_label(raw_key: str, fallback_prefix: str = "Key", next_index: int = 1) -> str:
+    """Determine label for an API key by matching known suffix or generating fallback."""
+    cleaned = raw_key.strip()
+    for suffix, label in KNOWN_KEY_SUFFIX_LABELS.items():
+        if cleaned.endswith(suffix):
+            return label
+    return f"{fallback_prefix}-{next_index}"
 
 
 class ModelQuotaLimit(BaseModel):
@@ -349,6 +375,34 @@ class KeyUpdateRequest(BaseModel):
     is_disabled: bool | None = None
     reset_cooldown: bool | None = None
     label: str | None = None
+
+
+KeyBulkItemStatus = Literal["added", "skipped_duplicate", "invalid"]
+
+
+class KeyBulkItemResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    masked_key: str
+    status: Literal["added", "skipped_duplicate", "invalid"]
+    key_id: int | None = None
+
+
+class KeyBulkCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    raw_keys: str = Field(..., min_length=1, description="Multiline text of API keys or label:key pairs")
+    default_prefix: str = Field(default="Key", description="Prefix for auto-naming if no suffix matches")
+
+
+class KeyBulkCreateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    added_count: int
+    skipped_count: int
+    results: list[KeyBulkItemResult]
+    keys: list[KeyRecord]
 
 
 class ClientKeyRecord(BaseModel):

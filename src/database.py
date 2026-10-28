@@ -11,7 +11,12 @@ from pathlib import Path
 import sqlite3
 import time
 from zoneinfo import ZoneInfo
-from src.contracts import INITIAL_PRELOADED_KEYS, RESET_TIMEZONE, mask_client_api_key
+from src.contracts import (
+    INITIAL_PRELOADED_KEYS,
+    RESET_TIMEZONE,
+    mask_api_key,
+    mask_client_api_key,
+)
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -392,6 +397,72 @@ class DatabaseManager:
         if result is None:
             raise RuntimeError(f"Failed to retrieve newly added key id={inserted_id}")
         return result
+
+    def _sync_bulk_create_keys(
+        self, items: list[tuple[str, str]]
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        """Bulk insert keys into pool, skipping duplicates and validating length.
+
+        Returns (added_records, item_results).
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT key_value FROM api_keys;")
+        existing_keys: set[str] = {str(row[0]) for row in cursor.fetchall()}
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        added_records: list[dict[str, object]] = []
+        item_results: list[dict[str, object]] = []
+
+        for key_val, label in items:
+            cleaned_key = key_val.strip()
+            cleaned_label = label.strip()
+            masked = mask_api_key(cleaned_key)
+
+            if len(cleaned_key) < 8:
+                item_results.append(
+                    {
+                        "label": cleaned_label,
+                        "masked_key": masked,
+                        "status": "invalid",
+                        "key_id": None,
+                    }
+                )
+            elif cleaned_key in existing_keys:
+                item_results.append(
+                    {
+                        "label": cleaned_label,
+                        "masked_key": masked,
+                        "status": "skipped_duplicate",
+                        "key_id": None,
+                    }
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO api_keys (
+                        key_value, label, status, is_disabled, consecutive_429,
+                        cooldown_until, created_at, updated_at
+                    ) VALUES (?, ?, 'READY', 0, 0, 0.0, ?, ?);
+                    """,
+                    (cleaned_key, cleaned_label, now_iso, now_iso),
+                )
+                inserted_id = int(cursor.lastrowid)
+                existing_keys.add(cleaned_key)
+                rec = self._sync_get_key_by_id(inserted_id)
+                if rec is not None:
+                    added_records.append(rec)
+                item_results.append(
+                    {
+                        "label": cleaned_label,
+                        "masked_key": masked,
+                        "status": "added",
+                        "key_id": inserted_id,
+                    }
+                )
+
+        conn.commit()
+        return added_records, item_results
 
     def _sync_update_key(
         self,
@@ -788,6 +859,13 @@ class DatabaseManager:
         async with self._lock:
             return await asyncio.to_thread(self._sync_add_key, key_value, label)
 
+    async def bulk_create_keys(
+        self, items: list[tuple[str, str]]
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        """Bulk insert keys into pool asynchronously with lock."""
+        async with self._lock:
+            return await asyncio.to_thread(self._sync_bulk_create_keys, items)
+
     async def update_key(
         self,
         key_id: int,
@@ -1044,6 +1122,13 @@ async def get_key_by_id(key_id: int) -> dict[str, object] | None:
 async def add_key(key_value: str, label: str) -> dict[str, object]:
     """Insert new API key into the database."""
     return await get_database().add_key(key_value, label)
+
+
+async def bulk_create_keys(
+    items: list[tuple[str, str]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Bulk insert keys into pool, skipping duplicates and validating length."""
+    return await get_database().bulk_create_keys(items)
 
 
 async def update_key(

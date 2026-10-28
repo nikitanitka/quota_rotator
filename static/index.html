@@ -321,6 +321,16 @@
             </svg>
             Add New Key
           </button>
+
+          <!-- Bulk Import Trigger -->
+          <button onclick="openBulkKeyModal()" class="bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 hover:border-indigo-500/60 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition shadow-md active:scale-95 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+            <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            + Bulk Import
+          </button>
         </div>
       </div>
 
@@ -754,7 +764,7 @@
 
   <!-- Add Key Modal -->
   <div id="addKeyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl transform transition-transform scale-95" id="addKeyModalCard">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl transform transition-transform scale-95" id="addKeyModalCard">
       
       <!-- Modal Header -->
       <div class="flex items-center justify-between pb-4 border-b border-slate-800">
@@ -765,8 +775,8 @@
             </svg>
           </div>
           <div>
-            <h3 class="text-base font-bold text-white">Add Gemini API Key</h3>
-            <p class="text-xs text-slate-400">Register a Google Gemini API key to the active rotation pool</p>
+            <h3 class="text-base font-bold text-white">Add Gemini API Keys</h3>
+            <p class="text-xs text-slate-400">Register Google Gemini API key(s) to the active rotation pool</p>
           </div>
         </div>
         <button onclick="closeAddKeyModal()" class="text-slate-400 hover:text-white transition p-1 rounded-lg hover:bg-slate-800" aria-label="Close modal">
@@ -774,8 +784,24 @@
         </button>
       </div>
 
-      <!-- Modal Form -->
-      <form id="addKeyForm" onsubmit="submitAddKeyForm(event)" class="space-y-4 pt-4">
+      <!-- Tab Switcher -->
+      <div class="flex items-center bg-slate-950/60 p-1 rounded-xl border border-slate-800/80 mt-4">
+        <button type="button" id="tabSingleKey" onclick="switchAddKeyTab('single')" class="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-sm focus:outline-none">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Одиночный ключ</span>
+        </button>
+        <button type="button" id="tabBulkKey" onclick="switchAddKeyTab('bulk')" class="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-2 text-slate-400 hover:text-white hover:bg-slate-800/60 focus:outline-none">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>Пакетное добавление (Bulk Import)</span>
+        </button>
+      </div>
+
+      <!-- Error box in modal -->
+      <div id="modalErrorBox" class="hidden mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+      </div>
+
+      <!-- Single Key Form -->
+      <form id="addKeyForm" onsubmit="submitAddKeyForm(event)" class="space-y-4 pt-3">
         
         <!-- Label Field -->
         <div>
@@ -808,11 +834,7 @@
           </div>
         </div>
 
-        <!-- Error box in modal -->
-        <div id="modalErrorBox" class="hidden p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
-        </div>
-
-        <!-- Modal Actions -->
+        <!-- Modal Actions for Single Key -->
         <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
           <button type="button" onclick="closeAddKeyModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">
             Cancel
@@ -825,6 +847,50 @@
               </svg>
             </span>
             <span>Add Key</span>
+          </button>
+        </div>
+
+      </form>
+
+      <!-- Bulk Key Form -->
+      <form id="bulkKeyForm" onsubmit="submitBulkKeyForm(event)" class="space-y-4 pt-3 hidden">
+        
+        <!-- Textarea Field & Counter -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-semibold text-slate-300" for="bulkKeysInput">Список ключей API</label>
+            <span class="text-[11px] text-slate-400">
+              Обнаружено ключей: <span id="bulkDetectedCount" class="font-mono font-bold text-indigo-400">0</span>
+            </span>
+          </div>
+          <textarea id="bulkKeysInput" rows="7" oninput="updateBulkDetectedCount()" placeholder="Вставьте список ключей (каждый с новой строки):&#10;AQ.Ab8RN6...&#10;или Метка:AQ.Ab8..." class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2.5 text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-y"></textarea>
+        </div>
+
+        <!-- Info Hint -->
+        <div class="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 leading-relaxed">
+          💡 Умное автоименование: ключи с окончаниями ...fQiVQ (Mama), ...HACVg (Nikitaloskutov), ...EDTLw (My5), ...SsIgw (my6), ...Td6lg (artem1), ...OYp3g (artem2), ...mVqdA (artem4), ...vitGQ (artem3), ...wgNWw (artem5) и др. автоматически получат свои исходные имена! Остальные получат имена Key-1, Key-2 и т.д.
+        </div>
+
+        <!-- Default Prefix Field -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5" for="bulkDefaultPrefix">Префикс по умолчанию</label>
+          <input type="text" id="bulkDefaultPrefix" value="Key" class="w-full bg-slate-950 border border-slate-700/80 text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+          <p class="text-[11px] text-slate-500 mt-1">Используется для генерации имён безымянных ключей (напр. Key-1, Key-2)</p>
+        </div>
+
+        <!-- Modal Actions for Bulk -->
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button type="button" onclick="closeAddKeyModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">
+            Cancel
+          </button>
+          <button type="submit" id="submitBulkKeyBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-indigo-600/30 active:scale-95 flex items-center gap-2">
+            <span id="bulkKeySpinner" class="hidden">
+              <svg class="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+            <span>Добавить все ключи</span>
           </button>
         </div>
 
@@ -1892,10 +1958,25 @@
 
     // --- Add Key Modal ---
     function openAddKeyModal() {
-      document.getElementById("addKeyForm").reset();
-      document.getElementById("modalErrorBox").classList.add("hidden");
-      document.getElementById("keyValidationHint").className = "text-[11px] text-slate-500 mt-1.5 flex items-center gap-1";
-      document.getElementById("keyValidationHint").innerText = "Min 8 characters required. Stored securely.";
+      const singleForm = document.getElementById("addKeyForm");
+      if (singleForm) singleForm.reset();
+      const bulkForm = document.getElementById("bulkKeyForm");
+      if (bulkForm) bulkForm.reset();
+      const bulkPrefix = document.getElementById("bulkDefaultPrefix");
+      if (bulkPrefix) bulkPrefix.value = "Key";
+      const detectedSpan = document.getElementById("bulkDetectedCount");
+      if (detectedSpan) detectedSpan.innerText = "0";
+
+      const errBox = document.getElementById("modalErrorBox");
+      if (errBox) errBox.classList.add("hidden");
+
+      const hint = document.getElementById("keyValidationHint");
+      if (hint) {
+        hint.className = "text-[11px] text-slate-500 mt-1.5 flex items-center gap-1";
+        hint.innerText = "Min 8 characters required. Stored securely.";
+      }
+
+      switchAddKeyTab("single");
 
       const modal = document.getElementById("addKeyModal");
       modal.classList.remove("hidden");
@@ -1903,7 +1984,77 @@
         modal.classList.remove("opacity-0");
         modal.classList.add("opacity-100");
       });
-      setTimeout(() => document.getElementById("keyLabelInput").focus(), 100);
+      setTimeout(() => {
+        const input = document.getElementById("keyLabelInput");
+        if (input) input.focus();
+      }, 100);
+    }
+
+    function openBulkKeyModal() {
+      const singleForm = document.getElementById("addKeyForm");
+      if (singleForm) singleForm.reset();
+      const bulkForm = document.getElementById("bulkKeyForm");
+      if (bulkForm) bulkForm.reset();
+      const bulkPrefix = document.getElementById("bulkDefaultPrefix");
+      if (bulkPrefix) bulkPrefix.value = "Key";
+      const detectedSpan = document.getElementById("bulkDetectedCount");
+      if (detectedSpan) detectedSpan.innerText = "0";
+
+      const errBox = document.getElementById("modalErrorBox");
+      if (errBox) errBox.classList.add("hidden");
+
+      switchAddKeyTab("bulk");
+
+      const modal = document.getElementById("addKeyModal");
+      modal.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        modal.classList.remove("opacity-0");
+        modal.classList.add("opacity-100");
+      });
+      setTimeout(() => {
+        const input = document.getElementById("bulkKeysInput");
+        if (input) input.focus();
+      }, 100);
+    }
+
+    function switchAddKeyTab(tab) {
+      const tabSingle = document.getElementById("tabSingleKey");
+      const tabBulk = document.getElementById("tabBulkKey");
+      const formSingle = document.getElementById("addKeyForm");
+      const formBulk = document.getElementById("bulkKeyForm");
+      const errBox = document.getElementById("modalErrorBox");
+      if (errBox) errBox.classList.add("hidden");
+
+      const activeTabClasses = "flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-sm focus:outline-none";
+      const inactiveTabClasses = "flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-2 text-slate-400 hover:text-white hover:bg-slate-800/60 focus:outline-none";
+
+      if (tab === "bulk") {
+        if (tabSingle) tabSingle.className = inactiveTabClasses;
+        if (tabBulk) tabBulk.className = activeTabClasses;
+        if (formSingle) formSingle.classList.add("hidden");
+        if (formBulk) formBulk.classList.remove("hidden");
+        setTimeout(() => {
+          const input = document.getElementById("bulkKeysInput");
+          if (input) input.focus();
+        }, 100);
+      } else {
+        if (tabSingle) tabSingle.className = activeTabClasses;
+        if (tabBulk) tabBulk.className = inactiveTabClasses;
+        if (formSingle) formSingle.classList.remove("hidden");
+        if (formBulk) formBulk.classList.add("hidden");
+        setTimeout(() => {
+          const input = document.getElementById("keyLabelInput");
+          if (input) input.focus();
+        }, 100);
+      }
+    }
+
+    function updateBulkDetectedCount() {
+      const textarea = document.getElementById("bulkKeysInput");
+      const countSpan = document.getElementById("bulkDetectedCount");
+      if (!textarea || !countSpan) return;
+      const lines = textarea.value.split("\n").map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith("#"));
+      countSpan.innerText = lines.length;
     }
 
     function closeAddKeyModal() {
@@ -1992,6 +2143,59 @@
       } finally {
         spinner.classList.add("hidden");
         submitBtn.disabled = false;
+      }
+    }
+
+    async function submitBulkKeyForm(event) {
+      if (event && event.preventDefault) event.preventDefault();
+      const rawKeysInput = document.getElementById("bulkKeysInput");
+      const defaultPrefixInput = document.getElementById("bulkDefaultPrefix");
+      const errBox = document.getElementById("modalErrorBox");
+      const spinner = document.getElementById("bulkKeySpinner");
+      const submitBtn = document.getElementById("submitBulkKeyBtn");
+
+      const rawKeys = rawKeysInput ? rawKeysInput.value : "";
+      const defaultPrefix = (defaultPrefixInput && defaultPrefixInput.value.trim()) || "Key";
+
+      if (!rawKeys.trim()) {
+        if (errBox) {
+          errBox.innerText = "Пожалуйста, введите список ключей";
+          errBox.classList.remove("hidden");
+        }
+        return;
+      }
+
+      if (errBox) errBox.classList.add("hidden");
+      if (spinner) spinner.classList.remove("hidden");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await fetch("/api/keys/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            raw_keys: rawKeysInput.value,
+            default_prefix: defaultPrefix
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || errData.detail || `HTTP ${res.status}: Ошибка при массовом добавлении ключей`);
+        }
+
+        const data = await res.json();
+        closeAddKeyModal();
+        showToast("Bulk Import", `Добавлено ${data.added_count} ключей (пропущено ${data.skipped_count})`, "success");
+        await refreshDashboard(false);
+      } catch (err) {
+        if (errBox) {
+          errBox.innerText = err.message || "Ошибка при массовом добавлении ключей";
+          errBox.classList.remove("hidden");
+        }
+      } finally {
+        if (spinner) spinner.classList.add("hidden");
+        if (submitBtn) submitBtn.disabled = false;
       }
     }
 

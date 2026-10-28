@@ -23,6 +23,10 @@ from src.contracts import (
     ClientKeyCreatedResponse,
     ClientKeyRecord,
     ClientKeyUpdateRequest,
+    KeyBulkCreateRequest,
+    KeyBulkCreateResponse,
+    KeyBulkItemResult,
+    KeyBulkItemStatus,
     KeyCreateRequest,
     KeyRecord,
     KeySelectionResult,
@@ -36,6 +40,7 @@ from src.contracts import (
     RouterErrorResponse,
     extract_text_from_contents,
     generate_client_api_key,
+    resolve_key_label,
 )
 from src.database import DatabaseManager, get_database, init_db
 from src.router_engine import (
@@ -164,6 +169,80 @@ async def create_key(payload: KeyCreateRequest) -> KeyRecord:
             message=f"Failed to add key: {exc}",
         ) from exc
     return await compute_key_record(inserted, db)
+
+
+@app.post(
+    "/api/keys/bulk",
+    response_model=KeyBulkCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def bulk_create_keys_endpoint(
+    req: KeyBulkCreateRequest,
+) -> KeyBulkCreateResponse:
+    """Bulk import API keys with suffix-based auto-naming or explicit labels."""
+    db = get_database()
+    counter = 1
+    parsed_items: list[tuple[str, str]] = []
+
+    for raw_line in req.raw_keys.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            parts = line.split(":", 1)
+            lbl = parts[0].strip()
+            key_val = parts[1].strip()
+        elif "=" in line:
+            parts = line.split("=", 1)
+            lbl = parts[0].strip()
+            key_val = parts[1].strip()
+        else:
+            key_val = line
+            lbl = ""
+
+        if not lbl:
+            lbl = resolve_key_label(
+                key_val, fallback_prefix=req.default_prefix, next_index=counter
+            )
+            counter += 1
+
+        parsed_items.append((key_val, lbl))
+
+    added_records, item_results = await db.bulk_create_keys(parsed_items)
+
+    key_records: list[KeyRecord] = []
+    for r in added_records:
+        rec = await compute_key_record(r, db)
+        key_records.append(rec)
+
+    results: list[KeyBulkItemResult] = []
+    for item in item_results:
+        status_val = str(item["status"])
+        item_status: KeyBulkItemStatus = (
+            "added"
+            if status_val == "added"
+            else "skipped_duplicate"
+            if status_val == "skipped_duplicate"
+            else "invalid"
+        )
+        results.append(
+            KeyBulkItemResult(
+                label=str(item["label"]),
+                masked_key=str(item["masked_key"]),
+                status=item_status,
+                key_id=int(item["key_id"]) if item.get("key_id") is not None else None,
+            )
+        )
+
+    added_count = sum(1 for item in item_results if item["status"] == "added")
+    skipped_count = sum(1 for item in item_results if item["status"] != "added")
+
+    return KeyBulkCreateResponse(
+        added_count=added_count,
+        skipped_count=skipped_count,
+        results=results,
+        keys=key_records,
+    )
 
 
 @app.patch("/api/keys/{key_id}", response_model=KeyRecord)
