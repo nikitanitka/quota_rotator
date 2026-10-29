@@ -43,6 +43,7 @@ from src.contracts import (
     resolve_key_label,
 )
 from src.database import DatabaseManager, get_database, init_db
+from src.prompt_rewriter import rewrite_incoming_payload
 from src.router_engine import (
     RouterException,
     authenticate_and_verify_client,
@@ -371,6 +372,8 @@ async def remove_client_key(key_id: int) -> Response:
 async def test_playground(payload: PlaygroundRequest) -> PlaygroundResponse:
     """Execute test prompt via dry-run simulation or live upstream call."""
     db = get_database()
+    if payload.model_id == "gemini-3.5-flash-lite":
+        payload.model_id = "gemini-3.8-flash"
     return await execute_playground_test(payload, db)
 
 
@@ -408,6 +411,9 @@ async def proxy_model_action(
     """Proxy inference requests to Google Gemini API or simulate in Dry-Run mode."""
     db = get_database()
     normalized = normalize_model_id(model)
+    if normalized == "gemini-3.5-flash-lite":
+        normalized = "gemini-3.8-flash"
+
     is_dry = dry_run or (x_dry_run is not None and x_dry_run.lower() in ("true", "1"))
 
     raw_body = await request.body()
@@ -426,6 +432,9 @@ async def proxy_model_action(
                 error_code=RouterErrorCode.VALIDATION_ERROR,
                 message=f"Invalid JSON request body: {exc}",
             ) from exc
+
+    # Внедрение перехватчика и полной замены промптов на лету
+    body_dict = rewrite_incoming_payload(body_dict)
 
     prompt_text = extract_text_from_contents(body_dict.get("contents") if body_dict else None)
     if not prompt_text and body_dict:
@@ -736,4 +745,3 @@ def time_now() -> float:
     """Helper returning current timestamp."""
     import time
     return time.time()
-
